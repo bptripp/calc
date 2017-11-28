@@ -272,6 +272,6 @@ if __name__ == '__main__':
     # nx.draw_networkx(graph, pos=nx.drawing.layout.fruchterman_reingold_layout(graph), arrows=True, font_size=10, node_size=1200, node_color='white')
     plt.show()
 
-    # from arch.conversion import make_net_from_system
+    # from calc.conversion import make_net_from_system
     # net = make_net_from_system(sys)
     # net.print()

@@ -1,7 +1,7 @@
 import unittest
 import tensorflow as tf
-from arch.system import get_example_system, System
-from arch.conversion import make_net_from_system, norm_squared_error, Cost, NetworkVariables
+from calc.system import get_example_system, System
+from calc.conversion import make_net_from_system, norm_squared_error, Cost, NetworkVariables
 
 
 def get_system_1():

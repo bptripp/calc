@@ -1,5 +1,5 @@
-from arch.system import System, Population, Projection
-from arch.network import Network, Layer, Connection
+from calc.system import System, Population, Projection
+from calc.network import Network, Layer, Connection
 import tensorflow as tf
 import numpy as np
 
@@ -469,7 +469,7 @@ def print_gradients(cost, vars):
 
 
 if __name__ == '__main__':
-    from arch.system import get_example_small, get_example_medium
+    from calc.system import get_example_small, get_example_medium
     # system = get_example_small()
     system = get_example_medium()
 
