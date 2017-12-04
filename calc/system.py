@@ -2,7 +2,6 @@ import networkx as nx
 import matplotlib.pyplot as plt
 
 #TODO: should be able to specify RF size for a subset of populations with None values ignored in cost
-#TODO: consider changing variable name to w_rf
 
 class Population:
     def __init__(self, name, n, e, w):
