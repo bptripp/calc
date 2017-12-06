@@ -1,19 +1,66 @@
+import nibabel
+import numpy as np
+import xml.etree.ElementTree as ET
+
 """
 TODO:
-- M132 parcellation names
-- cell densities / mm^3 (Beul et al. figure)
 - RF sizes for LGN, V1, V2, V4, PIT, MT, MST
 - FLNe (from excel file)
 - SLN (from excel file)
 - CoCoMac layer-wise codes
-- inflated positions
+"""
+
+"""
+Where possible, connection strengths and origin layers are taken from:
+
+Markov, N. T., Ercsey-Ravasz, M. M., Ribeiro Gomes, A. R., Lamy, C., Magrou, L., Vezoli, 
+J., ... & Sallet, J. (2012). A weighted and directed interareal connectivity matrix for macaque 
+cerebral cortex. Cerebral cortex, 24(1), 17-36.
+
+Additional connections and termination layers are taken from CoCoMac 2.0:
+ 
+Bakker, R., Wachtler, T., & Diesmann, M. (2012). CoCoMac 2.0 and the future of tract-tracing 
+databases. Frontiers in neuroinformatics, 6.
+
+The strengths of additional connections are estimated according to the distance rule from:
+ 
+Ercsey-Ravasz, M., Markov, N. T., Lamy, C., Van Essen, D. C., Knoblauch, K., Toroczkai, Z., 
+& Kennedy, H. (2013). A predictive network model of cerebral cortical connectivity based on a 
+distance rule. Neuron, 80(1), 184-197.
+
+This is similar to the model in: 
+Schmidt, M., Bakker, R., Shen, K., Bezgin, G., Hilgetag, C. C., Diesmann, M., & van Albada, S. J. (2015). 
+Full-density multi-scale account of structure and dynamics of macaque visual cortex. 
+arXiv preprint arXiv:1511.09364.
+
+This code is vision-centric at the moment. Here are some relevant references for other parts of cortex:
+ 
+Barbas, H., & Rempel-Clower, N. (1997). Cortical structure predicts the pattern of corticocortical 
+connections. Cerebral cortex (New York, NY: 1991), 7(7), 635-646.
+
+Dombrowski, S. M., Hilgetag, C. C., & Barbas, H. (2001). Quantitative architecture distinguishes 
+prefrontal cortical systems in the rhesus monkey. Cerebral Cortex, 11(10), 975-988.
+
+Dum, R. P., & Strick, P. L. (2005). Motor areas in the frontal lobe: the anatomical substrate for 
+the central control of movement. Motor cortex in voluntary movements: a distributed system for 
+distributed functions, 3-47. 
 """
 
 #TODO: refs for cell density and thickness, use V2 data due to negative correlation
 #TODO: Balaram and Shepherd total thicknesses don't match O'Kusky means: scale them and average V2
 
-# Sincich, L. C., Adams, D. L., & Horton, J. C. (2003). Complete flatmounting of the macaque cerebral cortex. Visual neuroscience, 20(6), 663-686.
-mean_cortical_area = 10430
+# Sincich, L. C., Adams, D. L., & Horton, J. C. (2003). Complete flatmounting of the macaque cerebral
+# cortex. Visual neuroscience, 20(6), 663-686.
+# (These all vary within a factor of two, but surface area of V1 & V2 well correlated with total; Fig 7)
+SAH_area = {
+    'V1': 1343,
+    'V2': 1012,
+    'MT': 73,
+    'A1': 88,
+    'S1': 284,
+    'Hippocampus': 181,
+    'Neocortex': 10430
+}
 
 # O'Kusky, J., & Colonnier, M. (1982). A laminar analysis of the number of neurons, glia, and synapses in the visual
 # cortex (area 17) of adult macaque monkeys. Journal of Comparative Neurology, 210(3), 278-290.
@@ -223,7 +270,9 @@ def _get_neurons_per_mm2_V2(layer):
     :return: Estimate of neurons per square mm of cortical surface in layer. This is based on
         V1 estimates, scaled by relative thickness of the corresponding V2 layer.
         Following Balaram et al. (see also refs therein) we group 4A and 4B with layer 3 for this
-        purpose.
+        purpose. This is probably not highly accurate, as cells are particularly small in V1
+        (see refs in Collins, C. E., Airey, D. C., Young, N. A., Leitch, D. B., & Kaas, J. H. (2010).
+        Neuron densities vary across and within cortical areas in primates. PNAS, 107(36), 15927-15932.)
     """
     result = None
     if layer == '2/3':
@@ -253,10 +302,21 @@ def _get_neurons_per_mm2_V2(layer):
 
 def get_num_neurons(area, layer):
     """
+    Cortical thickness and cell density are negatively correlated in visual cortex in many primate
+    species:
+
+    la Fougère, C., Grant, S., Kostikov, A., Schirrmacher, R., Gravel, P., Schipper, H. M., ... &
+    Thiel, A. (2011). Where in-vivo imaging meets cytoarchitectonics: the relationship between cortical
+    thickness and neuronal density measured with high-resolution [18 F] flumazenil-PET. Neuroimage, 56(3), 951-960.
+
+    Cahalane, D. J., Charvet, C. J., & Finlay, B. L. (2012). Systematic, balancing gradients in neuron density
+    and number across the primate isocortex. Frontiers in neuroanatomy, 6.
+
     TODO: docs
     :param area:
     :param layer:
     :return:
+
     """
     area = None
 
@@ -266,6 +326,64 @@ def get_num_neurons(area, layer):
         density = _get_neurons_per_mm2_V2(layer)
 
     return area * density
+
+
+class Yerkes19:
+    """
+    TODO
+    """
+
+    def __init__(self):
+        midthickness_data = nibabel.load('data/donahue/MacaqueYerkes19.R.midthickness.32k_fs_LR.surf.gii')
+        self.midthickness_points \
+            = np.array(midthickness_data.get_arrays_from_intent('NIFTI_INTENT_POINTSET')[0].data)
+        self.midthickness_triangles \
+            = np.array(midthickness_data.get_arrays_from_intent('NIFTI_INTENT_TRIANGLE')[0].data)
+
+        very_inflated_data = nibabel.load('data/donahue/MacaqueYerkes19.R.very_inflated.32k_fs_LR.surf.gii')
+        self.very_inflated_points \
+            = np.array(very_inflated_data.get_arrays_from_intent('NIFTI_INTENT_POINTSET')[0].data)
+
+        #TODO: make this automatically
+        label_tree = ET.parse('data/donahue/MarkovCC12_M132_91-area.32k_fs_LR.dlabel.xml')
+        root = label_tree.getroot()
+
+        self.areas = []
+        for label_name in root.findall('Matrix/MatrixIndicesMap/NamedMap/LabelTable/Label'):
+            # print(label.attrib)
+            self.areas.append(label_name.text)
+
+        point_inds = []
+        for brain_model in root.findall('Matrix/MatrixIndicesMap/BrainModel'):
+            if brain_model.attrib['BrainStructure'] == 'CIFTI_STRUCTURE_CORTEX_RIGHT':
+                vi = brain_model.find('VertexIndices')
+                for s in vi.text.split():
+                    point_inds.append(int(s))
+        self.point_inds = np.array(point_inds)
+
+        label_data = nibabel.load('data/donahue/MarkovCC12_M132_91-area.32k_fs_LR.dlabel.nii')
+        self.point_area_inds = np.array(label_data.get_data()).flatten()[:len(self.point_inds)]
+
+
+    def get_points_in_area(self, area):
+        assert area in self.areas, '%s is not in the list of cortical areas' % area
+
+        print('+++')
+        print(self.point_inds.shape)
+        print(max(self.point_inds))
+        print(self.point_area_inds.shape)
+        print(max(self.point_area_inds))
+
+        #TODO: clean this up
+        area_ind = self.areas.index(area)
+        point_inds = [self.point_inds[i] for i, x in enumerate(self.point_area_inds) if x == area_ind]
+        points = np.array([self.very_inflated_points[i] for i in point_inds])
+        # points = np.array([self.very_inflated_points[i] for i in point_inds])
+        print(points.shape)
+        return points
+
+    def get_area_centre(self, area):
+        pass
 
 
 if __name__ == '__main__':
@@ -288,6 +406,94 @@ if __name__ == '__main__':
     # for layer in get_layers('V1'):
     #     print(_get_neurons_per_mm2_V1(layer))
 
-    for layer in get_layers('V2'):
-        print(_get_neurons_per_mm2_V2(layer))
+    # for layer in get_layers('V2'):
+    #     print(_get_neurons_per_mm2_V2(layer))
 
+    # import nibabel
+    # # foo = nibabel.load('/Users/bptripp/Downloads/Donahue_et_al_2016_Journal_of_Neuroscience_W336/spec/MacaqueYerkes19.R.midthickness.32k_fs_LR.surf.gii')
+    # foo = nibabel.load('/Users/bptripp/Downloads/Donahue_et_al_2016_Journal_of_Neuroscience_W336/spec/MacaqueYerkes19.R.very_inflated.32k_fs_LR.surf.gii')
+    # # foo.print_summary()
+    # bar = foo.get_arrays_from_intent('NIFTI_INTENT_POINTSET')
+    # egg = foo.get_arrays_from_intent('NIFTI_INTENT_TRIANGLE')
+    # # print(egg[0].metadata)
+    # print('points and triangles:')
+    # print(bar[0].data.shape)
+    # # print(max(egg[0].data.flatten()))
+    # print(egg[0].data.shape)
+    # # # print(dir(egg[0]))
+    # # # print(egg[0].darray)
+    #
+    # foo2 = nibabel.load('/Users/bptripp/Downloads/Donahue_et_al_2016_Journal_of_Neuroscience_W336/data/MarkovCC12_M132_91-area.32k_fs_LR.dlabel.nii')
+    # print('labels')
+    # print(foo2.shape)
+    # # foo3 = nibabel.load('/Users/bptripp/Downloads/Donahue_et_al_2016_Journal_of_Neuroscience_W336 2/data/Macaque.MedialWall.32k_fs_LR.dlabel.nii')
+    # # print(foo3.shape)
+    # print(dir(foo2))
+    # # print(foo2.extra)
+    # # print(foo2.get_header())
+    # # print(max(foo2.get_data().flatten()))
+    #
+    # import xml.etree.ElementTree as ET
+    # import numpy as np
+    # tree = ET.parse('/Users/bptripp/code/calc/calc/data/donahue/MarkovCC12_M132_91-area.32k_fs_LR.dlabel.xml')
+    # # print(tree)
+    #
+    # root = tree.getroot()
+    #
+    # # for label in root.findall('Matrix/MatrixIndicesMap/NamedMap/LabelTable/Label'):
+    # #     print(label.attrib)
+    # #     print(label.text)
+    #
+    # left_ind = []
+    # for brain_model in root.findall('Matrix/MatrixIndicesMap/BrainModel'):
+    #     if brain_model.attrib['BrainStructure'] == 'CIFTI_STRUCTURE_CORTEX_LEFT':
+    #         vi = brain_model.find('VertexIndices')
+    #         for s in vi.text.split():
+    #             left_ind.append(int(s))
+    # print(len(left_ind))
+    # print(max(np.array(left_ind)))
+    #
+    # right_ind = []
+    # for brain_model in root.findall('Matrix/MatrixIndicesMap/BrainModel'):
+    #     if brain_model.attrib['BrainStructure'] == 'CIFTI_STRUCTURE_CORTEX_RIGHT':
+    #         vi = brain_model.find('VertexIndices')
+    #         for s in vi.text.split():
+    #             right_ind.append(int(s))
+    # print(len(right_ind))
+    # print(max(np.array(right_ind)))
+    #
+    # import matplotlib.pyplot as plt
+    # plt.plot(left_ind)
+    # plt.plot(right_ind)
+    # plt.show()
+    #
+
+    import os
+    print(os.getcwd())
+
+    y19 = Yerkes19()
+    points_MT = y19.get_points_in_area('MT')
+    points_V1 = y19.get_points_in_area('V1')
+    points_V2 = y19.get_points_in_area('V2')
+    points_TEO = y19.get_points_in_area('TEO')
+
+
+    from mpl_toolkits.mplot3d import Axes3D
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    points = y19.very_inflated_points[::10,:]
+    ax.scatter(points[:,0], points[:,1], points[:,2], c='k', marker='.')
+    ax.scatter(points_MT[:,0], points_MT[:,1], points_MT[:,2], c='b', marker='o')
+    ax.scatter(points_TEO[:,0], points_TEO[:,1], points_TEO[:,2], c='r', marker='o')
+    # ax.scatter(points_V1[:,0], points_V1[:,1]-2, points_V1[:,2], c='r', marker='.')
+    # ax.scatter(points_V2[:,0], points_V2[:,1]+2, points_V2[:,2], c='g', marker='.')
+    plt.show()
+
+    # print(y19.midthickness_points.shape)
+    # print(y19.midthickness_triangles.shape)
+    # print(y19.very_inflated_points.shape)
+    # print(y19.areas)
+    # print(y19.label_inds.shape)
+    # print(y19.labels.shape)
