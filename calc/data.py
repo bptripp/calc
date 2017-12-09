@@ -337,7 +337,7 @@ class Yerkes19:
         midthickness_data = nibabel.load('data/donahue/MacaqueYerkes19.R.midthickness.32k_fs_LR.surf.gii')
         self.midthickness_points \
             = np.array(midthickness_data.get_arrays_from_intent('NIFTI_INTENT_POINTSET')[0].data)
-        self.midthickness_triangles \
+        self.triangles \
             = np.array(midthickness_data.get_arrays_from_intent('NIFTI_INTENT_TRIANGLE')[0].data)
 
         very_inflated_data = nibabel.load('data/donahue/MacaqueYerkes19.R.very_inflated.32k_fs_LR.surf.gii')
@@ -364,26 +364,71 @@ class Yerkes19:
         label_data = nibabel.load('data/donahue/MarkovCC12_M132_91-area.32k_fs_LR.dlabel.nii')
         self.point_area_inds = np.array(label_data.get_data()).flatten()[:len(self.point_inds)]
 
+    def _assign_triangles(self):
+        expanded_point_area_inds = np.zeros(np.max(self.point_inds)+1)
+        for i in range(len(self.point_inds)):
+            expanded_point_area_inds[self.point_inds[i]] = self.point_area_inds[i]
 
-    def get_points_in_area(self, area):
+        self.triangle_area_inds = np.zeros(self.triangles.shape[0]) #unassigned
+        for i in range(self.triangles.shape[0]):
+            vertex_area_inds = np.zeros(3)
+            for j in range(3):
+                vertex_area_inds[j] = expanded_point_area_inds[self.triangles[i,j]]
+
+            if vertex_area_inds[0] == vertex_area_inds[1] or vertex_area_inds[0] == vertex_area_inds[2]:
+                self.triangle_area_inds[i] = vertex_area_inds[0]
+            elif vertex_area_inds[1] == vertex_area_inds[2]:
+                self.triangle_area_inds[i] = vertex_area_inds[1]
+
+    def get_points_in_area(self, area, inflated=False):
         assert area in self.areas, '%s is not in the list of cortical areas' % area
 
-        print('+++')
-        print(self.point_inds.shape)
-        print(max(self.point_inds))
-        print(self.point_area_inds.shape)
-        print(max(self.point_area_inds))
-
-        #TODO: clean this up
         area_ind = self.areas.index(area)
         point_inds = [self.point_inds[i] for i, x in enumerate(self.point_area_inds) if x == area_ind]
-        points = np.array([self.very_inflated_points[i] for i in point_inds])
-        # points = np.array([self.very_inflated_points[i] for i in point_inds])
-        print(points.shape)
+
+        if inflated:
+            points = np.array([self.very_inflated_points[i] for i in point_inds])
+        else:
+            points = np.array([self.midthickness_points[i] for i in point_inds])
+
         return points
 
-    def get_area_centre(self, area):
-        pass
+    def get_surface_area_total(self):
+        surface_area = 0
+
+        for triangle in self.triangles:
+            a = self.midthickness_points[triangle[0]]
+            b = self.midthickness_points[triangle[1]]
+            c = self.midthickness_points[triangle[2]]
+            surface_area = surface_area + _get_triangle_area(a, b, c)
+
+        return surface_area
+
+    def get_surface_area(self, area):
+        assert area in self.areas, '%s is not in the list of cortical areas' % area
+
+        area_ind = self.areas.index(area)
+
+        surface_area = 0
+        for i in range(self.triangles.shape[0]):
+            if self.triangle_area_inds[i] == area_ind:
+                triangle = self.triangles[i]
+                a = self.midthickness_points[triangle[0]]
+                b = self.midthickness_points[triangle[1]]
+                c = self.midthickness_points[triangle[2]]
+                surface_area = surface_area + _get_triangle_area(a, b, c)
+
+        return surface_area
+
+    def get_centre(self, area):
+        points = self.get_points_in_area(area, inflated=False)
+        return np.mean(points, axis=0)
+
+
+def _get_triangle_area(a, b, c):
+    v1 = b - a
+    v2 = c - a
+    return np.linalg.norm(np.cross(v1, v2)) / 2.
 
 
 if __name__ == '__main__':
@@ -472,24 +517,36 @@ if __name__ == '__main__':
     print(os.getcwd())
 
     y19 = Yerkes19()
-    points_MT = y19.get_points_in_area('MT')
-    points_V1 = y19.get_points_in_area('V1')
-    points_V2 = y19.get_points_in_area('V2')
-    points_TEO = y19.get_points_in_area('TEO')
+    # points_MT = y19.get_points_in_area('MT')
+    # points_V1 = y19.get_points_in_area('V1')
+    # points_V2 = y19.get_points_in_area('V2')
+    # points_TEO = y19.get_points_in_area('TEO')
+    #
+    #
+    # from mpl_toolkits.mplot3d import Axes3D
+    # import matplotlib.pyplot as plt
+    #
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    # points = y19.very_inflated_points[::10,:]
+    # ax.scatter(points[:,0], points[:,1], points[:,2], c='k', marker='.')
+    # ax.scatter(points_MT[:,0], points_MT[:,1], points_MT[:,2], c='b', marker='o')
+    # ax.scatter(points_TEO[:,0], points_TEO[:,1], points_TEO[:,2], c='r', marker='o')
+    # # ax.scatter(points_V1[:,0], points_V1[:,1]-2, points_V1[:,2], c='r', marker='.')
+    # # ax.scatter(points_V2[:,0], points_V2[:,1]+2, points_V2[:,2], c='g', marker='.')
+    # plt.show()
 
+    # print(y19.get_surface_area_total())
 
-    from mpl_toolkits.mplot3d import Axes3D
-    import matplotlib.pyplot as plt
+    y19._assign_triangles()
+    print(y19.get_surface_area('V1'))
+    print(y19.get_surface_area('V2'))
+    print(y19.get_surface_area('MT'))
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    points = y19.very_inflated_points[::10,:]
-    ax.scatter(points[:,0], points[:,1], points[:,2], c='k', marker='.')
-    ax.scatter(points_MT[:,0], points_MT[:,1], points_MT[:,2], c='b', marker='o')
-    ax.scatter(points_TEO[:,0], points_TEO[:,1], points_TEO[:,2], c='r', marker='o')
-    # ax.scatter(points_V1[:,0], points_V1[:,1]-2, points_V1[:,2], c='r', marker='.')
-    # ax.scatter(points_V2[:,0], points_V2[:,1]+2, points_V2[:,2], c='g', marker='.')
-    plt.show()
+    # print(y19.get_centre('V1'))
+    # print(y19.get_centre('V2'))
+    # print(y19.get_centre('V4'))
+    # print(y19.get_centre('MT'))
 
     # print(y19.midthickness_points.shape)
     # print(y19.midthickness_triangles.shape)
