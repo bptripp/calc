@@ -187,7 +187,7 @@ BDM04_N_per_type = {
     'X/Y': 361723
 }
 
-BDM04_neuron_types = [
+BDM04_targets = [
     'sp1',
     'sm1',
     'p2/3',
@@ -209,7 +209,35 @@ BDM04_neuron_types = [
     'sm6'
 ]
 
-# Extracted from Fig 9A via WebPlotDigitizer
+BDM04_sources = [
+    'p2/3',
+    'b2/3',
+    'db2/3',
+    'axo2/3',
+    'ss4(L4)',
+    'ss4(L2/3)',
+    'p4',
+    'b4',
+    'p5(L2/3)',
+    'p5(L5/6)',
+    'b5',
+    'p6(L4)',
+    'p6(L5/6)',
+    'X/Y',
+    'as', #unknown asymmetric
+    'sy'
+]
+
+BDM04_excitatory_types = {
+    '1': ['sp1'],
+    '2/3': ['p2/3'],
+    '4': ['ss4(L4)', 'ss4(L2/3)', 'p4'],
+    '5': ['p5(L2/3)', 'p5(L5/6)'],
+    '6': ['p6(L4)', 'p6(L5/6)'],
+    'extrinsic': ['as']
+}
+
+# Extracted from Fig 9A via WebPlotDigitizer; needed to check import of tables in supplementary material
 
 BDM04_synapses_per_neuron_L1 = {
     'sp1': 13005,
@@ -268,7 +296,138 @@ BDM04_synapses_per_neuron_L6 = {
 }
 
 
-def _get_synapses_per_layer(layer):
+def synapses_per_neuron(area, source_layer, target_layer):
+    """
+    Mean inbound connections per neuron. Only excitatory cells are considered, based on the
+    rationale in:
+
+    Parisien, C., Anderson, C. H., & Eliasmith, C. (2008). Solving the problem of negative
+    synaptic weights in cortical models. Neural computation, 20(6), 1473-1494.
+    Tripp, B., & Eliasmith, C. (2016). Function approximation in inhibitory networks.
+    Neural Networks, 77, 95-106.
+
+    Inputs to excitatory cells are averaged over excitatory cell types, weighted by numbers
+    of each cell type.
+
+    :param area: cortical area (e.g. 'V1', 'V2')
+    :param source_layer: one of '1', '2/3', '4', '5', '6' or 'extrinsic'
+    :param target_layer: one of '1', '2/3', '4', '5', '6'
+    :return:
+    """
+    n_source_types = 16
+    n_target_types = 19
+
+    # find table of synapses between types summed across all layers
+    totals = np.zeros((n_target_types, n_source_types))
+    layers = ['1', '2/3', '4', '5', '6']
+    if area == 'V1':
+        for layer in layers:
+            totals = totals + _get_synapses_per_layer_V1(layer)
+    else:
+        for layer in layers:
+            totals = totals + _get_synapses_per_layer_V2(layer)
+
+    # sum over sources and weighted average over targets ...
+    source_types = BDM04_excitatory_types[source_layer] # cell types in source layer (regardless of where synapses are)
+    target_types = BDM04_excitatory_types[target_layer]
+
+    total_inputs = np.zeros(n_target_types)
+    for i in range(n_source_types):
+        if BDM04_sources[i] in source_types:
+            total_inputs = total_inputs + totals[:,i]
+
+    numerator = 0.
+    denominator = 0.
+    for i in range(n_target_types):
+        if BDM04_targets[i] in target_types:
+            n = BDM04_N_per_type[BDM04_targets[i]]
+            numerator = numerator + n * total_inputs[i]
+            denominator = denominator + n
+
+    return numerator / denominator
+
+
+def _synapses_per_neuron_V1():
+    """
+    :return: Mean # of synapses per neuron across all monkey V1 (from OC82 data)
+    """
+    total_neurons_per_mm2 = 0
+    for value in OC82_n_neurons_per_mm2_V1.values():
+        total_neurons_per_mm2 = total_neurons_per_mm2 + value
+
+    total_synapses_per_mm2 = 0
+    for value in OC82_n_synapses_per_mm2_V1.values():
+        total_synapses_per_mm2 = total_synapses_per_mm2 + value
+
+    return total_synapses_per_mm2 / total_neurons_per_mm2
+
+
+def _synapses_per_neuron_cat_V1():
+    """
+    :return: Mean # of synapses per neuron across all cat V1 (from BDM04 data)
+    """
+    total_synapses_table = np.zeros((19,16))
+    for layer in ['1', '2/3', '4', '5', '6']:
+        total_synapses_table = total_synapses_table + _get_synapses_per_layer_cat_V1(layer)
+
+    total_neurons = 0
+    total_synapses = 0
+    for i in range(19):
+        type = BDM04_targets[i]
+        n_per_hemiphere = BDM04_N_per_type[type]
+        total_neurons = total_neurons + n_per_hemiphere
+        total_synapses = total_synapses + n_per_hemiphere * np.sum(total_synapses_table[i])
+
+    return total_synapses / total_neurons
+
+
+def _get_synapses_per_layer_V1(layer):
+    """
+    :param layer: one of 1, 2/3, 4, 5, 6
+    :return: Table of synapses per layer, from BDM04 cat data, but scaled according
+        to lower mean synapses per neuron in monkey
+    """
+    monkey_cat_ratio = _synapses_per_neuron_V1() / _synapses_per_neuron_cat_V1()
+    # print(monkey_cat_ratio)
+    return monkey_cat_ratio * _get_synapses_per_layer_cat_V1(layer)
+
+
+def _get_synapses_per_layer_V2(layer, rescale=True):
+    """
+    :param layer: one of 1, 2/3, 4, 5, 6
+    :param rescale: if True (the default), rescale cat V1 data by layer thickness. It isn't clear
+        that this is the right thing to do. For example, it seems doubtful that the relatively
+        sparse extrinsic inputs to L4 are more numerous with thicker L4, as they take up little
+        of the volume. However, synapse density per mm^3 is remarkably uniform across areas and
+        species, so density per mm^2 increases with thickness.
+        DeFelipe, J., Alonso-Nanclares, L., & Arellano, J. I. (2002). Microstructure of the
+        neocortex: comparative aspects. Journal of neurocytology, 31(3-5), 299-316.
+    :return: Table of estimated synapses per layer, based on data from cat V1. More direct
+        information would be useful here. The justification is that cat V1 is much like primate
+        extrastriate areas in terms of neuron density per mm^2 (whereas it is unlike primate V1):
+        Srinivasan, S., Carlo, C. N., & Stevens, C. F. (2015). Predicting visual acuity from the
+        structure of visual cortex. PNAS, 112(25), 7815-7820.
+        Carlo, C. N., & Stevens, C. F. (2013). Structural uniformity of neocortex, revisited.
+        PNAS, 110(4), 1488-1493.
+
+    """
+    if rescale:
+        if layer == '2/3':
+            thickness_V1 = BYK14_thickness_V1['2'] + BYK14_thickness_V1['3A'] + BYK14_thickness_V1['3B']
+        else:
+            thickness_V1 = 0
+            for key in BYK14_thickness_V1.keys():
+                if key.startswith(layer):
+                    thickness_V1 = thickness_V1 + BYK14_thickness_V1[key]
+
+        thickness_V2 = BYK14_thickness_V2[layer]
+
+        return thickness_V2 / thickness_V1 * _get_synapses_per_layer_cat_V1(layer)
+    else:
+        return _get_synapses_per_layer_cat_V1(layer)
+
+
+def _get_synapses_per_layer_cat_V1(layer):
     with open('data_files/BDM04-Supplementary.txt') as file:
         found_layer = False
         table = []
@@ -327,7 +486,7 @@ def _get_synapses_per_neuron_cat_V1():
         neurons = neurons + nt
         synapses = synapses + nt * _get_synapses_per_neuron_per_type_cat_V1(key)
 
-    print('cat neurons: {} synapses: {}'.format(neurons, synapses))
+    # print('cat neurons: {} synapses: {}'.format(neurons, synapses))
     return synapses / neurons
 
 
@@ -342,14 +501,9 @@ def _get_synapses_per_neuron_V1():
     for value in OC82_n_synapses_per_mm2_V1.values():
         synapses = synapses + value
 
-    print('monkey neurons: {} synapses: {}'.format(neurons, synapses))
+    # print('monkey neurons: {} synapses: {}'.format(neurons, synapses))
     return synapses / neurons
 
-
-#TODO: enter Binzegger connection tables
-#TODO: scale layer-wise to monkey synapse densities
-#TODO: calculate weighted-average in-degree by summing inputs across layers
-#TODO: figure out FLNe equivalent -- or remove from cost?
 
 def _plot_synapses_per_layer_per_mm_2():
     layers = ['1', '2/3', '4', '5', '6']
@@ -386,38 +540,6 @@ def _plot_synapses_per_layer_per_mm_2():
     plt.plot(cat_counts)
     plt.legend(['monkey', 'cat'])
     plt.show()
-
-
-def get_in_degree(layer):
-    """
-    Mean inbound connections per neuron, neglecting connections within layer. Only
-    excitatory cells are considered, based on the rationale in:
-
-    Parisien, C., Anderson, C. H., & Eliasmith, C. (2008). Solving the problem of negative
-    synaptic weights in cortical models. Neural computation, 20(6), 1473-1494.
-
-    We use inputs to excitatory cells, averaged over excitatory cell types (weighted by numbers
-    of each cell type). This is based mainly on estimates by Binzegger et al. (2004) for cat V1.
-    To rescale for macaque V1, we multiply by (monkey synapses per neuron) / (car synapses per
-    neuron).
-
-    :param layer:
-    :return:
-    """
-    assert layer in ['1', '2/3', '4', '5', '6']
-
-    if layer == '1':
-        types = ['sp1']
-    elif layer == '2/3':
-        types = ['p2/3']
-    elif layer == '4':
-        types = ['ss4(L4)', 'ss4(L2/3)', 'p4']
-    elif layer == '5':
-        types = ['p5(L2/3)', 'p5(L5/6)']
-    elif layer == '6':
-        types = ['p6(L4)', 'p6(L5/6)']
-
-
 
 
 """
@@ -743,6 +865,7 @@ def _get_neurons_per_mm2_V2(layer):
         purpose. This is probably not highly accurate, as cells are particularly small in V1
         (see refs in Collins, C. E., Airey, D. C., Young, N. A., Leitch, D. B., & Kaas, J. H. (2010).
         Neuron densities vary across and within cortical areas in primates. PNAS, 107(36), 15927-15932.)
+        #TODO: fix this using Carlo & Stevens and Srinivasan, Carlo & Stevens
     """
     result = None
     if layer == '2/3':
@@ -899,4 +1022,12 @@ if __name__ == '__main__':
     # print(_get_synapses_per_neuron_cat_V1())
 
     # _plot_synapses_per_layer_per_mm_2()
-    print(_get_synapses_per_layer('6'))
+    # print(_get_synapses_per_layer_cat_V1('6'))
+    # print(_synapses_per_neuron_V1())
+    # print(_synapses_per_neuron_cat_V1())
+
+    # _get_synapses_per_layer_V1('4')
+    # _get_synapses_per_layer_V2('6')
+
+    print(synapses_per_neuron('V2', '4', '2/3'))
+    print(synapses_per_neuron('V2', '2/3', '5'))
