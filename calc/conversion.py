@@ -3,6 +3,7 @@ from calc.network import Network, Layer, Connection
 import tensorflow as tf
 import numpy as np
 
+
 class SystemConstants:
     def __init__(self, system):
         """
@@ -169,7 +170,6 @@ def get_clip_ops(vars, min=1e-3, max=1.):
 
 def norm_squared_error(target, actual):
     return tf.square(tf.log(tf.divide(actual, target)))
-    # return tf.square(tf.divide(actual - target, target))
 
 
 class Cost:

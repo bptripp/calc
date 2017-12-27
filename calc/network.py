@@ -1,5 +1,4 @@
 # TODO: consider changing w -> w_k and width -> w_map
-# TODO: update Network from TF
 
 class Layer:
     def __init__(self, name, m, width):

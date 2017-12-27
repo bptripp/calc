@@ -1,7 +1,6 @@
 import networkx as nx
 import matplotlib.pyplot as plt
 
-#TODO: should be able to specify RF size for a subset of populations with None values ignored in cost
 
 class Population:
     def __init__(self, name, n, e, w):
@@ -158,29 +157,21 @@ def get_example_small():
 def get_example_medium():
     result = System()
     result.add_input(750000, .02)
-    # result.add_input(270000, .02)
     result.add('LGN', 2000000, 1000, .04)
     result.add('V1_4', 53000000, 500, .1)
     result.add('V1_23', 53000000, 1000, .13)
-    # result.add('V1_5', 27000000, 3000, .16)
     result.add('V2_4', 33000000, 500, .2)
     result.add('V2_23', 33000000, 1000, .26)
-    # result.add('V2_5', 17000000, 3000, .32)
     result.add('V4_4', 17000000, 500, .4)
     result.add('V4_23', 17000000, 1000, .5)
-    # result.add('V4_5', 8000000, 3000, .6)
     result.add('MT_4', 4800000, 500, 1.)
     result.add('MT_23', 4800000, 1000, 1.1)
-    # result.add('MT_5', 2400000, 3000, 1.2)
     result.add('TEO_4', 6000000, 500, 1.4)
     result.add('TEO_23', 6000000, 1000, 1.5)
-    # result.add('TEO_5', 3000000, 3000, 1.6)
     result.add('TEpd_4', 5700000, 500, 3.)
     result.add('TEpd_23', 5700000, 1000, 4.)
-    # result.add('TEpd_5', 2900000, 3000, 5.)
     result.add('DP_4', 17000000, 500, 1.7)
     result.add('DP_23', 17000000, 1000, 1.8)
-    # result.add('DP_5', 8000000, 3000, 1.9)
 
     # input
     result.connect('INPUT', 'LGN', 1.)
@@ -188,19 +179,12 @@ def get_example_medium():
 
     # laminar connections
     result.connect('V1_4', 'V1_23', 1.)
-    # result.connect('V1_23', 'V1_5', 1.)
     result.connect('V2_4', 'V2_23', 1.)
-    # result.connect('V2_23', 'V2_5', 1.)
     result.connect('V4_4', 'V4_23', 1.)
-    # result.connect('V4_23', 'V4_5', 1.)
     result.connect('MT_4', 'MT_23', 1.)
-    # result.connect('MT_23', 'MT_5', 1.)
     result.connect('TEO_4', 'TEO_23', 1.)
-    # result.connect('TEO_23', 'TEO_5', 1.)
     result.connect('TEpd_4', 'TEpd_23', 1.)
-    # result.connect('TEpd_23', 'TEpd_5', 1.)
     result.connect('DP_4', 'DP_23', 1.)
-    # result.connect('DP_23', 'DP_5', 1.)
 
     # feedforward inter-areal connections
     result.connect('V1_23', 'V2_4', 1.)
@@ -252,13 +236,7 @@ def get_layout(sys):
     return result
 
 if __name__ == '__main__':
-    # sys = get_example_small()
     sys = get_example_medium()
-
-    # sys = System()
-    # sys.add('V1_23', 100000, 5000, 1)
-    # sys.add('V2_4', 100000, 5000, 2)
-    # sys.connect('V1_23', 'V2_4', .2)
 
     foo = get_layout(sys)
     print(foo)
