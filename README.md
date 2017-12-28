@@ -49,7 +49,7 @@ Output format: dynamic table
 
 You don’t need the results of the query, but you do need the URL of the results page. Select and copy it. Then go to http://cocomac.g-node.org/services/connectivity_matrix.php and set up the query on this page as follows: 
 
-Database version: release 2013
+Database version: release 2014 Oct. 22
 
 Axonal projections table: AxonalProjections_FV91
 
@@ -65,5 +65,5 @@ Output format: html table
 
 Indicate that you will abide by our citation policy: Yes ... 
 
-The URL you copied from the previous query should be pasted into the “Search wizard URL ..." box. Click the “Generate connectivity matrix” button. Highlight the resulting JSON text and copy it into a file called <AREA-NAME>.json (in this example, LIP.json). The reference codes will be listed at the bottom of the results. Full information on each reference can be found at http://cocomac.g-node.org/services/search_wizard.php?T=Literature&x0=&limit=500&page=1&format=dhtml 
+The URL you copied from the previous query should be pasted into the “Search wizard URL ..." box. Click the “Generate connectivity matrix” button. The reference codes will be listed at the bottom of the results. Full information on each reference can be found at http://cocomac.g-node.org/services/search_wizard.php?T=Literature&x0=&limit=500&page=1&format=dhtml 
 
