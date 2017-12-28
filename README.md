@@ -15,8 +15,19 @@ Cercor_2012 Table.xls
 
 Open each of these files, and save the first sheet in .csv format, in the calc/data/markov folder.
 
+### BALSA
+Go to https://balsa.wustl.edu/study/show/W336 and click the Download button. You will need the following files: 
+
+MacaqueYerkes19.R.midthickness.32k_fs_LR.surf.gii
+
+MacaqueYerkes19.R.very_inflated.32k_fs_LR.surf.gii
+
+MarkovCC12_M132_91-area.32k_fs_LR.dlabel.nii
+
 ### CoCoMac 2.0
-You must download one JSON file for each cortical area you wish to include in your models. The first step is to go to http://cocomac.g-node.org/services/search_wizard.php and set up a query that looks like this (note this example is for the lateral intraparietal area, LIP): 
+Download a JSON file of CoCoMac data with information about the source and target layers of inter-area connections. The direct link to the query result is: http://cocomac.g-node.org/services/connectivity_matrix.php?dbdate=20141022&AP=AxonalProjections_FV91&constraint=&origins=&terminals=&square=1&merge=max&laminar=both&format=json&cite=1 Save the result as connectivity_data.json in the calc/data_files/cocomac folder. 
+
+If you publish work that uses CoCoMac (which is likely if you publish something that uses CALC) you must cite Bakker et al. (2012) (https://www.frontiersin.org/articles/10.3389/fninf.2012.00030/full) and the relevant original tract tracing studies. You can find references to the the relevant tract tracing studies by cortical area, from the CoCoMac query interface, but it is a multi-step process. For convenience, references for some areas are listed in calc/data_files/cocomac/cocomac.bib. To find them yourself, the first step is to go to http://cocomac.g-node.org/services/search_wizard.php and set up a query that looks like this (note this example is for the lateral intraparietal area, LIP): 
 
 Type of data to search for: AxonalProjections_FV91
 
@@ -50,19 +61,9 @@ Merge multiple reports: Take the maximum value
 
 Show laminar patterns: Both origin and terminal, as json array
 
-Output format: json-formatted array of arrays ...
+Output format: html table
 
 Indicate that you will abide by our citation policy: Yes ... 
 
-The URL you copied from the previous query should be pasted into the “Search wizard URL ..." box. Click the “Generate connectivity matrix” button. Highlight the resulting JSON text and copy it into a file called <AREA-NAME>.json (in this example, LIP.json). 
-You will also need the references used to generate the connectivity matrix, to comply with the CoCoMac 2.0 citation policy. To get these, change the output format to “html table” and re-generate. The reference codes will be listed at the bottom of the results. Full information on each reference can be found at http://cocomac.g-node.org/services/search_wizard.php?T=Literature&x0=&limit=500&page=1&format=dhtml 
-
-### BALSA
-Go to https://balsa.wustl.edu/study/show/W336 and click the Download button. You will need the following files: 
-
-MacaqueYerkes19.R.midthickness.32k_fs_LR.surf.gii
-
-MacaqueYerkes19.R.very_inflated.32k_fs_LR.surf.gii
-
-MarkovCC12_M132_91-area.32k_fs_LR.dlabel.nii
+The URL you copied from the previous query should be pasted into the “Search wizard URL ..." box. Click the “Generate connectivity matrix” button. Highlight the resulting JSON text and copy it into a file called <AREA-NAME>.json (in this example, LIP.json). The reference codes will be listed at the bottom of the results. Full information on each reference can be found at http://cocomac.g-node.org/services/search_wizard.php?T=Literature&x0=&limit=500&page=1&format=dhtml 
 
