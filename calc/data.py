@@ -867,7 +867,7 @@ class CoCoMac:
             print('Cell layer: {} excitatory synapses: {}%'.format(layers[i], int(round(fraction*100))))
 
 """
-Note that we constrain the FLNe only for connections in Markov et al. (2012). Reasonable constraints could be 
+We constrain the FLNe only for connections in Markov et al. (2012). Reasonable constraints could be 
 added for other connections in several ways:
  
 1) Other quantitative datasets may provide some additional coverage, e.g. visual prefrontal afferents 
@@ -884,8 +884,12 @@ correlation, there is also plenty of spread (see their Figure 2A).
 densities for a number of areas. The correlation seems good and this is simpler to do than (2) but there are 
 limitations. First, they have only shown the correlation for their small "prefrontal visual afferents" dataset. 
 Second, they don't give densities for all areas. This could be explored further by testing the correlation on the 
-Markov et al. 29x29 matrix with available cell densities. If it looks promising, missing densities could be 
-guessed based on position [TODO: find this reference]. 
+Markov et al. 29x29 matrix with available cell densities. If it looks promising, other densities could be 
+guessed based on curve fit in D. J. Cahalane, C. J. Charvet, and B. L. Finlay, “Systematic, balancing gradients 
+in neuron density and number across the primate isocortex,” Front. Neuroanat., vol. 6, no. July, pp. 1–12, 2012.
+Or a Yerkes19 flatmap could be mapped to the flatmap in C. E. Collins, D. C. Airey, N. a Young, D. B. Leitch, and 
+J. H. Kaas, “Neuron densities vary across and within cortical areas in primates.,” Proc. Natl. Acad. Sci. U. S. A., 
+vol. 107, no. 36, pp. 15927–32, Sep. 2010.
 """
 
 def _read_fraction_labelled_neurons_extrinsic():
