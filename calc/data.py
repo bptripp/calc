@@ -2,17 +2,7 @@ import nibabel
 import numpy as np
 import xml.etree.ElementTree as ET
 import csv
-import textract
-
-"""
-TODO:
-- make example network with forward, backward, recurrent connections 
-- test reasonableness of some layer neuron counts
-
-- FLNe (from excel file)
-- SLN (from excel file)
-- CoCoMac layer-wise codes
-"""
+import json
 
 """
 Where possible, connection strengths and origin layers are taken from:
@@ -53,8 +43,7 @@ distributed functions, 3-47.
 J. Neurocytol., vol. 31, no. 3–5 SPEC. ISS., pp. 317–335, 2002.
 """
 
-#TODO: refs for cell density and thickness, use V2 data due to negative correlation
-#TODO: Balaram and Shepherd total thicknesses don't match O'Kusky means: scale them and average V2
+#TODO: implement distance rule for missing connections? or don't constrain?
 
 # Sincich, L. C., Adams, D. L., & Horton, J. C. (2003). Complete flatmounting of the macaque cerebral
 # cortex. Visual neuroscience, 20(6), 663-686.
@@ -293,6 +282,22 @@ BDM04_synapses_per_neuron_L6 = {
     'p6(L4)': 3294,
     'p6(L5/6)': 5647,
     'sm6': 3176
+}
+
+# From Figure 4 of Felleman, D. J., & Van Essen, D. C. (1991). Distributed hierarchical
+# processing in the primate cerebral cortex. Cerebral cortex (New York, NY: 1991), 1(1),
+# 1-47.
+FV91_hierarchy = {
+    'V1': 1,
+    'V2': 2,
+    'V3': 3, 'VP': 3,
+    'PIP': 4, 'V3A': 4,
+    'MDP': 5, 'PO': 5, 'MT': 5, 'V4t': 5, 'V4': 5,
+    'DP': 6, 'VOT': 6,
+    'VIP': 7, 'LIP': 7, 'MSTd': 7, 'MSTl': 7, 'FST': 7, 'PITd': 7, 'PITv': 7,
+    '7b': 8, '7a': 8, 'FEF': 8, 'STPp': 8, 'CITd': 8, 'CITv': 8,
+    'STPa': 9, 'AITd': 9, 'AITv': 9,
+    '36': 10, '46': 10, 'TF': 10, 'TH': 10
 }
 
 
@@ -686,6 +691,203 @@ def _get_triangle_area(a, b, c):
 yerkes19 = Yerkes19()
 
 
+class CoCoMac:
+    """
+    Inter-area connectivity data from the CoCoMac database,
+    R. Bakker, T. Wachtler, and M. Diesmann, “CoCoMac 2.0 and the future of tract-tracing
+    databases.,” Front. Neuroinform., vol. 6, no. December, p. 30, Jan. 2012.
+    Includes categorical connection strength codes, by source and target layer, where
+    available.
+
+    #TODO: map axon terminal layers to cell body layers via Binzegger
+    """
+    def __init__(self):
+        file_name = 'data_files/cocomac/cocomac.json'
+        print(file_name)
+        with open(file_name) as file:
+            self.data = json.load(file)
+            # print(data)
+            # # print(data['FV91-MST']['FV91-IT'])
+            # print(data['FV91-PITd'])
+            # print(data['FV91-PITv'])
+
+    @staticmethod
+    def _map_M14_to_FV91(area):
+        """
+        :param area: Area name from Markov et al. parcellation
+        :return: Name of most similar area from CoCoMac
+        """
+        #TODO: choosing some of these at random to get code working; go back and compare Markov
+        #   with CoCoMac connection patterns if Markov injection site unclear
+        #TODO: this method doesn't have to be on this class
+
+        map = {
+            'TEO': 'PITd', #could be PITv
+            'TEpd': 'CITd',
+            'TEpv': 'CITv',
+            'TEad': 'AITd',
+            'TEav': 'AITv',
+            'MST': 'MSTd' #could be MSTl
+        }
+
+        if area in map.keys():
+            area = map[area]
+
+        return area
+
+    @staticmethod
+    def _guess_missing_layers(source_area, target_area, layers):
+        if layers[0] is None:
+            layers[0] = '??????'
+        if layers[1] is None:
+            layers[1] = '??????'
+
+        source_level = FV91_hierarchy[source_area]
+        target_level = FV91_hierarchy[target_area]
+
+        # lacking data we will guess the simpler of typical alternatives from FV91 Figure 3
+        if source_level < target_level:
+            guess = ['0XX000', '000X00']
+        elif source_level > target_level:
+            guess = ['0000X0', 'X0000X']
+        else:
+            guess = ['0XX000', 'XXXXXX']
+
+        layers[0] = list(layers[0])
+        layers[1] = list(layers[1])
+        for i in range(6):
+            if layers[0][i] == '?':
+                layers[0][i] = guess[0][i]
+            if layers[1][i] == '?':
+                layers[1][i] = guess[1][i]
+        layers[0] = ''.join(layers[0])
+        layers[1] = ''.join(layers[1])
+
+        return layers
+
+    @staticmethod
+    def _map_axon_termination_layers_to_cell_layers(layers):
+        """
+        :param layers: List of six boolean values corresponding to presence of axon terminals in layers 1-6.
+        :return: List of five boolean values corresponding to estimated presence of connections to cells in
+            layers 1, 2/3, 4, 5, 6. These estimates are made based on tables in Binzegger et al. (2004)
+            supplementary material, which breaks down synapses in each layer by target cell type
+            and cell-body layer. If >5% of unclassified asymmetric synapses in layer A are onto
+            excitatory cells in layer B, we map a True in layer-A input to a True in layer-B return value.
+
+            The mappings are:  axon terminals in layer       suggests synapses onto cells in layer
+                                1                               2/3, 4, 5
+                                2/3                             2/3
+                                4                               4, 6
+                                5                               5, 6
+                                6                               6
+
+            There are actually no unclassified asymmetric synapses in layer 2/3 according to Binzegger et al.,
+            but they studied V1. According to Felleman & Van Essen (1991) we should expect these mainly in
+            areas with lateral inter-area connections, which are absent from V1. Here we assume such synapses
+            are onto layer 2/3 cells.
+
+            We ignore inhibitory neurons (as we do throughout this project) due to
+            reasoning in Parisien et al.
+
+            Code for calculating the fractions is in _print_fraction_asymmetric(), below.
+        """
+        map = [
+            ['2/3', '4', '5'],
+            ['2/3'],
+            ['2/3'],
+            ['4', '6'],
+            ['5', '6'],
+            ['6']
+        ]
+
+        result = []
+        for i in range(6):
+            if layers[i]:
+                result.extend(map[i])
+
+        return sorted(list(set(result)))
+
+    def get_connection_details(self, source_area, target_area):
+        """
+        :param source_area: cortical area from which connection originates
+        :param target_area: cortical area in which connection terminates
+        :return: if a connection between the areas exists in CoCoMac, a dict with keys
+            source_layers and target_layers, where each is a list of six boolean values
+            indicating whether layers 1-6 participate in the connection at each end.
+            Missing information is filled in with typical values according to the areas
+            positions in the visual hierarchy, from Felleman, D. J., & Van Essen, D. C.
+            (1991). Distributed hierarchical processing in the primate cerebral cortex.
+            Cerebral cortex (New York, NY: 1991), 1(1), 1-47. If no connection exists
+            between given areas in CoCoMac, None is returned.
+        """
+        source_area = CoCoMac._map_M14_to_FV91(source_area)
+        target_area = CoCoMac._map_M14_to_FV91(target_area)
+
+        layers = self.data['FV91-{}'.format(source_area)]['FV91-{}'.format(target_area)]
+
+        if layers[0] is None and layers[1] is None:
+            return None
+        else:
+            layers = CoCoMac._guess_missing_layers(source_area, target_area, layers)
+
+            target_present = []
+            source_present = []
+            for i in range(6):
+                source_present.append(False if layers[0][i] == '0' else True)
+                target_present.append(False if layers[1][i] == '0' else True)
+            return {'source_layers': source_present, 'target_layers': target_present}
+
+    @staticmethod
+    def _print_fraction_asymmetric(layer):
+        as_col_num = 14
+        asymmetric_synapses_per_neuron = _get_synapses_per_layer_cat_V1(layer)[:,as_col_num]
+
+        neurons = []
+        for target in BDM04_targets:
+            neurons.append(BDM04_N_per_type[target])
+
+        asymmetric_synapses_per_type = np.multiply(asymmetric_synapses_per_neuron, neurons)
+
+        layers = []
+        asymmetric_synapses_per_layer = []
+        for layer in BDM04_excitatory_types.keys():
+            if layer != 'extrinsic':
+                sum = 0
+                for type in BDM04_excitatory_types[layer]:
+                    sum = sum + asymmetric_synapses_per_type[BDM04_targets.index(type)]
+
+                layers.append(layer)
+                asymmetric_synapses_per_layer.append(sum)
+
+        total = np.sum(asymmetric_synapses_per_layer)
+        for i in range(5):
+            # layer = BDM04_excitatory_types.keys()[i]
+            fraction = asymmetric_synapses_per_layer[i] / total
+            print('Cell layer: {} excitatory synapses: {}%'.format(layers[i], int(round(fraction*100))))
+
+"""
+Note that we constrain the FLNe only for connections in Markov et al. (2012). Reasonable constraints could be 
+added for other connections in several ways:
+ 
+1) Other quantitative datasets may provide some additional coverage, e.g. visual prefrontal afferents 
+data in Table 2 of Hilgetag, Medalla, Beul, and Barbas, “The primate connectome in context: Principles 
+of connections of the cortical visual system,” Neuroimage, vol. 134, pp. 685–702, 2016.
+
+2) The distance rule of Ercsey-Ravasz, Markov, Lamy, VanEssen, Knoblauch, Toroczkai, 
+and Kennedy, “A Predictive Network Model of Cerebral Cortical Connectivity Based on a Distance Rule,” 
+Neuron, vol. 80, no. 1, pp. 184–197, 2013. However this requires tracing the shortest path through white matter. 
+(The authors seem to have used this software to do so: http://exploranova.info/m9732/) Also, while there is a 
+correlation, there is also plenty of spread (see their Figure 2A). 
+
+3) Hilgetag et al. (2016) suggest an alternative rule based on differences in cell density, and give a table of 
+densities for a number of areas. The correlation seems good and this is simpler to do than (2) but there are 
+limitations. First, they have only shown the correlation for their small "prefrontal visual afferents" dataset. 
+Second, they don't give densities for all areas. This could be explored further by testing the correlation on the 
+Markov et al. 29x29 matrix with available cell densities. If it looks promising, missing densities could be 
+guessed based on position [TODO: find this reference]. 
+"""
+
 def _read_fraction_labelled_neurons_extrinsic():
     sources = []
     targets = []
@@ -924,6 +1126,7 @@ def get_num_neurons(area, layer):
 
     return int(surface_area * density)
 
+
 if __name__ == '__main__':
     # data = OC82_thickness_V1
     # total = 0
@@ -1029,5 +1232,17 @@ if __name__ == '__main__':
     # _get_synapses_per_layer_V1('4')
     # _get_synapses_per_layer_V2('6')
 
-    print(synapses_per_neuron('V2', '4', '2/3'))
-    print(synapses_per_neuron('V2', '2/3', '5'))
+    # print(synapses_per_neuron('V2', '4', '2/3'))
+    # print(synapses_per_neuron('V2', '2/3', '5'))
+
+    c = CoCoMac()
+    # print(c._get_key('TEO'))
+    # print('FV91-{}'.format(c._map_M14_to_FV91('V1')))
+    # print('FV91-{}'.format(c._map_M14_to_FV91('MST')))
+    # layers = c.data['FV91-{}'.format(c._map_M14_to_FV91('V1'))]['FV91-{}'.format(c._map_M14_to_FV91('MST'))]
+    # print(layers)
+    # print(c._guess_missing_layers('V1', 'MSTd', layers))
+    # print(c.get_connection_details('V1', 'V4'))
+
+    # c._print_fraction_asymmetric('6')
+    print(c._map_axon_termination_layers_to_cell_layers([True, False, False, False, False, True]))
