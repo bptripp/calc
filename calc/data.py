@@ -16,16 +16,10 @@ Additional connections and termination layers are taken from CoCoMac 2.0:
 Bakker, R., Wachtler, T., & Diesmann, M. (2012). CoCoMac 2.0 and the future of tract-tracing 
 databases. Frontiers in neuroinformatics, 6.
 
-The strengths of additional connections are estimated according to the distance rule from:
- 
-Ercsey-Ravasz, M., Markov, N. T., Lamy, C., Van Essen, D. C., Knoblauch, K., Toroczkai, Z., 
-& Kennedy, H. (2013). A predictive network model of cerebral cortical connectivity based on a 
-distance rule. Neuron, 80(1), 184-197.
+A major source for information on inter-laminar connections (within a single area) is: 
 
-This is similar to the model in: 
-Schmidt, M., Bakker, R., Shen, K., Bezgin, G., Hilgetag, C. C., Diesmann, M., & van Albada, S. J. (2015). 
-Full-density multi-scale account of structure and dynamics of macaque visual cortex. 
-arXiv preprint arXiv:1511.09364.
+T. Binzegger, R. J. Douglas, and K. A. C. Martin, “A quantitative map of the circuit of cat 
+primary visual cortex,” J. Neurosci., vol. 24, no. 39, pp. 8441–8453, 2004.
 
 This code is vision-centric at the moment. Here are some relevant references for other parts of cortex:
  
@@ -39,11 +33,9 @@ Dum, R. P., & Strick, P. L. (2005). Motor areas in the frontal lobe: the anatomi
 the central control of movement. Motor cortex in voluntary movements: a distributed system for 
 distributed functions, 3-47. 
 
-[1] G. N. Elston, “Cortical heterogeneity: Implications for visual processing and polysensory integration,” 
+G. N. Elston, “Cortical heterogeneity: Implications for visual processing and polysensory integration,” 
 J. Neurocytol., vol. 31, no. 3–5 SPEC. ISS., pp. 317–335, 2002.
 """
-
-#TODO: implement distance rule for missing connections? or don't constrain?
 
 # Sincich, L. C., Adams, D. L., & Horton, J. C. (2003). Complete flatmounting of the macaque cerebral
 # cortex. Visual neuroscience, 20(6), 663-686.
@@ -102,7 +94,8 @@ OC82_n_synapses_per_mm2_V1 = {
     '6B': 25000000
 }
 
-# Balaram, P., Young, N. A., & Kaas, J. H. (2014). Histological features of layers and sublayers in cortical visual areas V1 and V2 of chimpanzees, macaque monkeys, and humans. Eye and brain, 2014(6 Suppl 1), 5.
+# Balaram, P., Young, N. A., & Kaas, J. H. (2014). Histological features of layers and sublayers in
+# cortical visual areas V1 and V2 of chimpanzees, macaque monkeys, and humans. Eye and brain, 2014(6 Suppl 1), 5.
 # This data was estimated from Figure 4 using WebPlotDigitizer. Laminae labels are Brodman's.
 BYK14_thickness_V1 = {
     '1': 0.0828,
@@ -698,18 +691,12 @@ class CoCoMac:
     databases.,” Front. Neuroinform., vol. 6, no. December, p. 30, Jan. 2012.
     Includes categorical connection strength codes, by source and target layer, where
     available.
-
-    #TODO: map axon terminal layers to cell body layers via Binzegger
     """
     def __init__(self):
-        file_name = 'data_files/cocomac/cocomac.json'
+        file_name = 'data_files/cocomac/connectivity_matrix.json'
         print(file_name)
         with open(file_name) as file:
             self.data = json.load(file)
-            # print(data)
-            # # print(data['FV91-MST']['FV91-IT'])
-            # print(data['FV91-PITd'])
-            # print(data['FV91-PITv'])
 
     @staticmethod
     def _map_M14_to_FV91(area):
@@ -929,27 +916,6 @@ def _read_supragranular_layers_percent():
                 percents.append(float(row[2]))
 
     return sources, targets, percents
-
-
-def get_sources(area):
-    return []
-
-def get_feedforward(source, target):
-    #TODO: implement
-    # if area != 'V1' and TLF[3] > .5:  # we only want feedforward connections before optimization
-    return True
-
-def get_connection_details(source, target):
-    #TODO: implement
-    #TODO: distance rule
-    #TODO: docs for CoCoMac files
-    #TODO: note this won't respect specificity of connections from layer X of A to layer Y of B
-    #   (not sure if this is known)
-    fraction_labelled_neurons = None
-    source_layer_fractions = []
-    target_layer_fractions = []
-
-    return fraction_labelled_neurons, source_layer_fractions, target_layer_fractions
 
 
 def check_data():
@@ -1240,13 +1206,12 @@ if __name__ == '__main__':
     # print(synapses_per_neuron('V2', '2/3', '5'))
 
     c = CoCoMac()
-    # print(c._get_key('TEO'))
     # print('FV91-{}'.format(c._map_M14_to_FV91('V1')))
     # print('FV91-{}'.format(c._map_M14_to_FV91('MST')))
-    # layers = c.data['FV91-{}'.format(c._map_M14_to_FV91('V1'))]['FV91-{}'.format(c._map_M14_to_FV91('MST'))]
-    # print(layers)
+    layers = c.data['FV91-{}'.format(c._map_M14_to_FV91('V1'))]['FV91-{}'.format(c._map_M14_to_FV91('MT'))]
+    print(layers)
     # print(c._guess_missing_layers('V1', 'MSTd', layers))
     # print(c.get_connection_details('V1', 'V4'))
 
     # c._print_fraction_asymmetric('6')
-    print(c._map_axon_termination_layers_to_cell_layers([True, False, False, False, False, True]))
+    # print(c._map_axon_termination_layers_to_cell_layers([True, False, False, False, False, True]))

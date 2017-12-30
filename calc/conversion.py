@@ -1,8 +1,9 @@
-from calc.system import System, Population, Projection
-from calc.network import Network, Layer, Connection
+from calc.system import InterLaminarProjection, InterAreaProjection
+from calc.network import Network
 import tensorflow as tf
 import numpy as np
 
+#TODO: refactor finer-grained cost objects that encapsulate individual terms, associated NetworkVariables & SystemConstants
 
 class SystemConstants:
     def __init__(self, system):
@@ -15,6 +16,7 @@ class SystemConstants:
         self.e = []
         self.w = []
         self.f = []
+        self.b = []
 
         for population in system.populations:
             self.n.append(tf.constant(float(population.n), name='n_in_{}'.format(population.name)))
@@ -25,7 +27,12 @@ class SystemConstants:
                 self.e.append(tf.constant(float(population.e), name='e_of_{}'.format(population.name)))
 
         for projection in system.projections:
-            self.f.append(tf.constant(float(projection.f)))
+            if isinstance(projection, InterAreaProjection):
+                self.f.append(tf.constant(float(projection.f)))
+                self.b.append(None)
+            elif isinstance(projection, InterLaminarProjection):
+                self.f.append(None)
+                self.b.append(tf.constant(float(projection.b)))
 
 
 def get_variable(name, initial_value):
@@ -126,6 +133,7 @@ class NetworkVariables:
 
             pre_pixel_width = image_pixel_width * self.width[image_layer] / self.width[pre_ind]
             # convert RF sizes from degrees visual angle to pre-layer pixels ...
+            #TODO: deal with equal RF sizes
             sigma_post = tf.divide(self.w_rf[post_ind], pre_pixel_width)
             sigma_pre = tf.divide(self.w_rf[pre_ind], pre_pixel_width)
             sigma_kernel = tf.sqrt(sigma_post**2 - sigma_pre**2)
@@ -243,6 +251,32 @@ class Cost:
 
         return tf.multiply(tf.constant(kappa), tf.reduce_mean(terms))
 
+    def match_cost_b(self, kappa):
+        #TODO: unit test
+        """
+        :param kappa: weight relative to other costs
+        :return: TF node for the total cost of mismatches in # of synapses onto each neuron from
+            each projection
+        """
+        terms = []
+        for ij in range(len(self.system.b)):
+            b_system = self.system.b[ij]
+            if b_system is not None:
+                b_network = self._get_b_network(ij)
+                terms.append(norm_squared_error(b_system, b_network))
+
+        return tf.constant(kappa) * tf.reduce_mean(terms)
+
+    def _get_b_network(self, ij):
+        j = self.network.pres[ij]
+
+        w_k_ij = self.network.w[ij]
+        m_j = self.network.m[j]
+        c_ij = self.network.c[ij]
+        sigma_ij = self.network.sigma[ij]
+
+        return w_k_ij ** 2 * m_j * c_ij * sigma_ij
+
     def match_cost_f(self, kappa):
         """
         :param kappa: weight relative to other costs
@@ -252,19 +286,20 @@ class Cost:
         terms = []
         for ij in range(len(self.system.f)): #looping through connections
             f_system = self.system.f[ij]
-            f_network = self._get_f_network(ij)
-            term = norm_squared_error(f_system, f_network)
-            terms.append(term)
+            if f_system is not None:
+                f_network = self._get_f_network(ij)
+                term = norm_squared_error(f_system, f_network)
+                terms.append(term)
 
         return tf.constant(kappa) * tf.reduce_mean(terms)
 
     def _get_f_network(self, ij):
         n_network_ij = self.n_contrib(ij)
-        n_network_i = []
+        n_network_j = []
         input_connections = self.network.input_connections[self.network.posts[ij]]
         for input_connection in input_connections:
-            n_network_i.append(self.n_contrib(input_connection))
-        return n_network_ij / tf.reduce_sum(n_network_i)
+            n_network_j.append(self.n_contrib(input_connection))
+        return n_network_ij / tf.reduce_sum(n_network_j)
 
     def n_contrib(self, conn_ind):
         """
@@ -273,16 +308,14 @@ class Cost:
         :param conn_ind: index of a connection
         :return: number of presynaptic neurons that contribute to the connection (a TF Node)
         """
-
         pre_ind = self.network.pres[conn_ind]
-        post_ind = self.network.posts[conn_ind]
 
-        n_i = self._get_n_network(pre_ind)
+        n_j = self._get_n_network(pre_ind)
         c_ij = self.network.c[conn_ind]
         s_ij = self.network.s[conn_ind]
         w_ij = self.network.w[conn_ind]
         alpha_ij = tf.minimum(tf.constant(1.), tf.square(w_ij / s_ij))
-        return n_i * c_ij * self.sigma_star(conn_ind) * alpha_ij
+        return n_j * c_ij * self.sigma_star(conn_ind) * alpha_ij
 
     def sigma_star(self, conn_ind):
         """
@@ -335,6 +368,8 @@ class Cost:
         Prints comparison of system target properties with properties calculated from network.
         """
 
+        # This is a good place to add debugging code
+
         for i in range(len(system.populations)):
             pop = system.populations[i]
             n = round(sess.run(self._get_n_network(i)))
@@ -344,8 +379,12 @@ class Cost:
 
         for ij in range(len(system.projections)):
             projection = system.projections[ij]
-            f = sess.run(self._get_f_network(ij))
-            print('{}->{} f:[{}|{:10.6f}]'.format(projection.origin.name, projection.termination.name, projection.f, f))
+            if isinstance(projection, InterAreaProjection):
+                f = sess.run(self._get_f_network(ij))
+                print('{}->{} f:[{}|{:10.6f}]'.format(projection.origin.name, projection.termination.name, projection.f, f))
+            elif isinstance(projection, InterLaminarProjection):
+                b = sess.run(self._get_b_network(ij))
+                print('{}->{} b:[{}|{:10.6f}]'.format(projection.origin.name, projection.termination.name, projection.b, b))
 
 
 def bounds(var_list, min=None, max=None):
@@ -411,11 +450,12 @@ def make_net_from_system(system, image_layer=0, image_channels=3.):
         pre = net.find_layer(projection.origin.name)
         post = net.find_layer(projection.termination.name)
 
-        c = projection.f
-        # c = .1 + .1*np.random.rand()
+        # c = projection.f
+        c = .1 + .2*np.random.rand()
         s = 1. + 9.*np.random.rand()
         rf_ratio = projection.termination.w / projection.origin.w
         w = (rf_ratio - 1.) / (0.5 + np.random.rand())
+        w = np.maximum(.1, w)  # make sure kernel has +ve width
         sigma = .1 + .1*np.random.rand()
         net.connect(pre, post, c, s, w, sigma)
 
@@ -470,8 +510,8 @@ def print_gradients(cost, vars):
 
 if __name__ == '__main__':
     from calc.system import get_example_small, get_example_medium
-    # system = get_example_small()
-    system = get_example_medium()
+    system = get_example_small()
+    # system = get_example_medium()
 
     net = make_net_from_system(system)
     cost = Cost(system, net)
@@ -484,7 +524,12 @@ if __name__ == '__main__':
 
 
     # c = cost.match_cost_f(1.)
-    c = cost.match_cost_n(1.) + cost.match_cost_w(1.) + cost.match_cost_e(1.) + cost.match_cost_f(1.) + cost.constraint_cost(1.)
+    c = cost.match_cost_n(1.) \
+        + cost.match_cost_w(1.) \
+        + cost.match_cost_e(1.) \
+        + cost.match_cost_f(1.) \
+        + cost.match_cost_b(1.) \
+        + cost.constraint_cost(1.)
     # c = cost.match_cost_w(1.) + cost.match_cost_e(1.) + cost.match_cost_f(1.) + cost.constraint_cost(1.)
     # c = cost.match_cost_n(1.) + cost.match_cost_w(1.) + cost.match_cost_e(1.) + cost.constraint_cost(1.)
     # + cost.param_cost(.000001)
@@ -580,6 +625,7 @@ if __name__ == '__main__':
                 print(sess.run(cost.match_cost_w(1.)))
                 print(sess.run(cost.match_cost_e(1.)))
                 print(sess.run(cost.match_cost_f(1.)))
+                print(sess.run(cost.match_cost_b(1.)))
 
             if np.isnan(cost_i):
                 print('optimization failed')

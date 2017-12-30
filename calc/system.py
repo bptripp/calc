@@ -17,15 +17,38 @@ class Population:
 
 
 class Projection:
+    def __init__(self, origin, termination):
+        """
+        :param origin: presynaptic Population
+        :param termination: postsynaptic Population
+        """
+        self.origin = origin
+        self.termination = termination
+
+
+class InterAreaProjection(Projection):
     def __init__(self, origin, termination, f):
         """
         :param origin: presynaptic Population
         :param termination: postsynaptic Population
-        :param f: fraction of all neurons that project to termination that are from origin (from Markov)
+        :param f: fraction of all neurons that project to termination that are from origin (from Markov
+            et al., 2012)
         """
-        self.origin = origin
-        self.termination = termination
+        Projection.__init__(self, origin, termination)
         self.f = f
+
+
+class InterLaminarProjection(Projection):
+    def __init__(self, origin, termination, b):
+        """
+        :param origin: presynaptic Population
+        :param termination: postsynaptic Population
+        :param b: mean number of synapses onto a single postsynaptic neuron from the presynaptic neuron
+            population (b is for Binzegger, since we take this from Binzegger et al., 2004, Figures
+            7 and 8)
+        """
+        Projection.__init__(self, origin, termination)
+        self.b = b
 
 
 class System:
@@ -49,7 +72,7 @@ class System:
 
         self.populations.append(Population(name, n, e, w))
 
-    def connect(self, origin_name, termination_name, f):
+    def connect_areas(self, origin_name, termination_name, f):
         origin = self.find_population(origin_name)
         termination = self.find_population(termination_name)
 
@@ -58,7 +81,18 @@ class System:
         if termination is None:
             raise Exception(termination_name + ' is not in the system')
 
-        self.projections.append(Projection(origin, termination, f))
+        self.projections.append(InterAreaProjection(origin, termination, f))
+
+    def connect_layers(self, origin_name, termination_name, b):
+        origin = self.find_population(origin_name)
+        termination = self.find_population(termination_name)
+
+        if origin is None:
+            raise Exception(origin_name + ' is not in the system')
+        if termination is None:
+            raise Exception(termination_name + ' is not in the system')
+
+        self.projections.append(InterLaminarProjection(origin, termination, b))
 
     def find_population(self, name):
         result = None
@@ -118,43 +152,48 @@ def get_example_system():
     result.add('V1', 10000000, 2000, .1)
     result.add('V2', 10000000, 2000, .2)
     result.add('V4', 5000000, 2000, .4)
-    result.connect('INPUT', 'V1', 1.)
-    result.connect('V1', 'V2', 1.)
-    result.connect('V1', 'V4', .5)
-    result.connect('V2', 'V4', .5)
+    result.connect_areas('INPUT', 'V1', 1.)
+    result.connect_areas('V1', 'V2', 1.)
+    result.connect_areas('V1', 'V4', .5)
+    result.connect_areas('V2', 'V4', .5)
     return result
 
 def get_example_small():
     result = System()
     result.add_input(750000, .02)
-    result.add('V1_4', 53000000, 500, .1)
+    result.add('V1_4', 53000000, 500, .09)
     result.add('V1_23', 53000000, 1000, .1)
-    result.add('V1_5', 27000000, 3000, .1)
-    result.add('V2_4', 33000000, 500, .2)
+    result.add('V1_5', 27000000, 3000, .11)
+    result.add('V2_4', 33000000, 500, .19)
     result.add('V2_23', 33000000, 1000, .2)
-    result.add('V2_5', 17000000, 3000, .2)
-    result.add('V4_4', 17000000, 500, .4)
+    result.add('V2_5', 17000000, 3000, .21)
+    result.add('V4_4', 17000000, 500, .39)
     result.add('V4_23', 17000000, 1000, .4)
-    result.add('V4_5', 8000000, 3000, .4)
-    result.connect('INPUT', 'V1_4', 1.)
+    result.add('V4_5', 8000000, 3000, .41)
 
-    result.connect('V1_4', 'V1_23', 1.)
-    result.connect('V1_23', 'V1_5', 1.)
+    result.connect_areas('INPUT', 'V1_4', 1.)
 
-    result.connect('V1_5', 'V2_4', 1.)
+    result.connect_layers('V1_4', 'V1_23', 800.)
+    result.connect_layers('V1_23', 'V1_5', 3000.)
 
-    result.connect('V2_4', 'V2_23', 1.)
-    result.connect('V2_23', 'V2_5', 1.)
+    result.connect_areas('V1_5', 'V2_4', 1.)
 
-    result.connect('V1_5', 'V4_4', .15)
-    result.connect('V2_5', 'V4_4', .85)
+    result.connect_layers('V2_4', 'V2_23', 800.)
+    result.connect_layers('V2_23', 'V2_5', 3000.)
 
-    result.connect('V4_4', 'V4_23', 1.)
-    result.connect('V4_23', 'V4_5', 1.)
+    result.connect_areas('V1_5', 'V4_4', .15)
+    result.connect_areas('V2_5', 'V4_4', .85)
+
+    result.connect_layers('V4_4', 'V4_23', 800.)
+    result.connect_layers('V4_23', 'V4_5', 3000.)
 
     return result
 
 def get_example_medium():
+    # This example was written before the code distinguished interarea and interlaminar
+    # connections. Interarea connections are used throughout (even between layers) to
+    # preserve it as-is.
+
     result = System()
     result.add_input(750000, .02)
     result.add('LGN', 2000000, 1000, .04)
@@ -174,35 +213,35 @@ def get_example_medium():
     result.add('DP_23', 17000000, 1000, 1.8)
 
     # input
-    result.connect('INPUT', 'LGN', 1.)
-    result.connect('LGN', 'V1_4', 1.)
+    result.connect_areas('INPUT', 'LGN', 1.)
+    result.connect_areas('LGN', 'V1_4', 1.)
 
     # laminar connections
-    result.connect('V1_4', 'V1_23', 1.)
-    result.connect('V2_4', 'V2_23', 1.)
-    result.connect('V4_4', 'V4_23', 1.)
-    result.connect('MT_4', 'MT_23', 1.)
-    result.connect('TEO_4', 'TEO_23', 1.)
-    result.connect('TEpd_4', 'TEpd_23', 1.)
-    result.connect('DP_4', 'DP_23', 1.)
+    result.connect_areas('V1_4', 'V1_23', 1.)
+    result.connect_areas('V2_4', 'V2_23', 1.)
+    result.connect_areas('V4_4', 'V4_23', 1.)
+    result.connect_areas('MT_4', 'MT_23', 1.)
+    result.connect_areas('TEO_4', 'TEO_23', 1.)
+    result.connect_areas('TEpd_4', 'TEpd_23', 1.)
+    result.connect_areas('DP_4', 'DP_23', 1.)
 
     # feedforward inter-areal connections
-    result.connect('V1_23', 'V2_4', 1.)
-    result.connect('V1_23', 'V4_4', 0.0307)
-    result.connect('V1_23', 'MT_4', 0.0235)
-    result.connect('V2_23', 'V4_4', 0.9693)
-    result.connect('V2_23', 'MT_4', 0.2346)
-    result.connect('V2_23', 'TEpd_4', 0.0026)
-    result.connect('V2_23', 'DP_4', 0.2400)
-    result.connect('V4_23', 'MT_4', 0.7419)
-    result.connect('V4_23', 'TEpd_4', 0.2393)
-    result.connect('V4_23', 'DP_4', 0.7591)
-    result.connect('TEO_23', 'TEpd_4', 0.7569)
-    result.connect('TEO_23', 'DP_4', 0.0008)
-    result.connect('MT_23', 'TEpd_4', 0.0004)
-    result.connect('DP_23', 'TEpd_4', 0.0009)
-    result.connect('V2_23', 'TEO_4', 0.0909)
-    result.connect('V4_23', 'TEO_4', 0.9091)
+    result.connect_areas('V1_23', 'V2_4', 1.)
+    result.connect_areas('V1_23', 'V4_4', 0.0307)
+    result.connect_areas('V1_23', 'MT_4', 0.0235)
+    result.connect_areas('V2_23', 'V4_4', 0.9693)
+    result.connect_areas('V2_23', 'MT_4', 0.2346)
+    result.connect_areas('V2_23', 'TEpd_4', 0.0026)
+    result.connect_areas('V2_23', 'DP_4', 0.2400)
+    result.connect_areas('V4_23', 'MT_4', 0.7419)
+    result.connect_areas('V4_23', 'TEpd_4', 0.2393)
+    result.connect_areas('V4_23', 'DP_4', 0.7591)
+    result.connect_areas('TEO_23', 'TEpd_4', 0.7569)
+    result.connect_areas('TEO_23', 'DP_4', 0.0008)
+    result.connect_areas('MT_23', 'TEpd_4', 0.0004)
+    result.connect_areas('DP_23', 'TEpd_4', 0.0009)
+    result.connect_areas('V2_23', 'TEO_4', 0.0909)
+    result.connect_areas('V4_23', 'TEO_4', 0.9091)
 
     return result
 

@@ -8,7 +8,7 @@ def get_system_1():
     result = System()
     result.add_input(100, .02)
     result.add('V1', 100, 10, .1)
-    result.connect('INPUT', 'V1', 1.)
+    result.connect_areas('INPUT', 'V1', 1.)
     return result
 
 
@@ -18,10 +18,10 @@ def get_system_2():
     result.add('V1', 100, 10, .1)
     result.add('V2', 100, 10, .2)
     result.add('V4', 500, 10, .4)
-    result.connect('INPUT', 'V1', 1.)
-    result.connect('V1', 'V2', 1)
-    result.connect('V1', 'V4', .5)
-    result.connect('V2', 'V4', .5)
+    result.connect_areas('INPUT', 'V1', 1.)
+    result.connect_areas('V1', 'V2', 1)
+    result.connect_areas('V1', 'V4', .5)
+    result.connect_areas('V2', 'V4', .5)
     return result
 
 
