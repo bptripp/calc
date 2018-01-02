@@ -2,7 +2,7 @@ import unittest
 import tensorflow as tf
 from calc.system import get_example_system, System
 from calc.conversion import make_net_from_system, norm_squared_error, Cost, NetworkVariables
-
+import numpy as np
 
 def get_system_1():
     result = System()
@@ -127,7 +127,7 @@ class TestCost(unittest.TestCase):
             sess.run(init)
             result = sess.run(cost._get_n_network(1))
             answer = net.layers[1].m * net.layers[1].width**2
-            self.assertAlmostEqual(result, answer)
+            self.assertAlmostEqual(result, answer, 3)
 
     def test_norm_squared_error(self):
         target = tf.Variable(2.)
@@ -136,7 +136,7 @@ class TestCost(unittest.TestCase):
         init = tf.global_variables_initializer()
         with tf.Session() as sess:
             sess.run(init)
-            self.assertAlmostEqual(sess.run(e), .25)
+            self.assertAlmostEqual(sess.run(e), 0.4804530139)
 
     def test_match_cost_n(self):
         system, net, cost = get_cost_1()
@@ -150,7 +150,8 @@ class TestCost(unittest.TestCase):
             for i in range(len(system.populations)):
                 system_n = system.populations[i].n
                 net_n = net.layers[i].width**2 * net.layers[i].m
-                err = ((net_n - system_n) / system_n)**2
+                err = np.log(net_n / system_n)**2
+                # err = ((net_n - system_n) / system_n)**2
                 # print('PY sys: {} net: {} err: {}'.format(system_n, net_n, err))
                 # e = norm_squared_error(cost.system.n[i], cost.get_n_network(i))
                 # print('TF sys: {} net: {} err: {}'.format(sess.run(cost.system.n[i]), sess.run(cost.get_n_network(i)), sess.run(e)))
@@ -172,7 +173,8 @@ class TestCost(unittest.TestCase):
             # just one input here, so no sum ...
             w = sess.run(cost.network.w[0])  # the TF node isn't taken from the net but calculated as a function of RFs
             net_e = w**2 * net.connections[0].c * net.layers[0].m * net.connections[0].sigma
-            answer = ((net_e - system_e) / system_e)**2
+            answer = np.log(net_e / system_e)**2
+            # answer = ((net_e - system_e) / system_e)**2
             result = sess.run(cost.match_cost_e(1.))
             self.assertAlmostEqual(result, answer, 3)
 
@@ -235,7 +237,8 @@ class TestCost(unittest.TestCase):
 
                 net_f = net_n / net_n_total
 
-                err = ((sys_f - net_f) / sys_f)**2
+                err = np.log(net_f / sys_f) ** 2
+                # err = ((sys_f - net_f) / sys_f)**2
                 # print('net_n: {} net_f: {} sys_f: {} err: {}'.format(net_n, net_f, sys_f, err))
                 answer = answer + err
 
@@ -272,7 +275,7 @@ class TestCost(unittest.TestCase):
             w = sess.run(cost1.network.w[0]) # the TF node isn't taken from the net but calculated as a function of RFs
             answer = w**2 * net1.layers[0].m * net1.layers[1].m
             result = sess.run(cost1.param_cost(1.))
-            self.assertAlmostEqual(result, answer)
+            self.assertAlmostEqual(result, answer, 3)
 
 
 def test_param_cost_2(self):
