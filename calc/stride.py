@@ -1,22 +1,25 @@
 """
-The stride parameters of connections benefits from special treatment, because they
-are integers that have small optimal values. Rounding them after optimizing as floats
-can cause large changes, inconsistency between converging paths, and strides of 0.
+This file contains code related to setting stride hyperparameters. The other
+hyperparameters are optimized using gradient descent, and rounded if they are
+supposed to be integers. However, this doesn't work well for strides. Because
+they are integers that have small optimal values, optimizing as floats and rounding
+can cause problems such as large quantization error, inconsistency between
+converging paths, and strides of 0.
 
-To avoid these problems, we first choose a random candidate stride pattern, and then
-optimize other parameters as float (using gradients).
+To avoid these problems, we choose random candidate stride patterns, and then
+optimize other parameters using gradient descent. We partially optimize the
+other hyperparameters of a number of candidates and choose the one with the best
+result. The algorithm is as follows:
 
-First:
-- find longest path from input to output
+1: Start by setting all strides to None
+2: While at least one stride is None:
+2.1: Find longest path within network that consists only of edges with None strides
+2.2: Set strides along longest path
+2.3: If cumulative stride along path is greater than image width or doesn't equal
+    gain from start to end (if cumulative strides at each end are known) return to 2.1
 
-To produce a candidate stride pattern:
-1. set strides along longest path between 1 and 3 at random
-2. if cumulative stride is greater than image width (<1 pixel at output) return to 1
-    (note this check vastly reduces the candidates for networks with realistic depth)
-3. for each remaining connection in random order:
-    if cumulative stride of origin and termination are set, stride is their ratio; if
-        ratio <1 restart 3
-    otherwise set stride between 1 and 3 at random
+TODO: do we need to enumerate all options or just try random ones?
+TODO: This code assumes the network has a single input.
 """
 
 import numpy as np
@@ -24,118 +27,89 @@ import networkx as nx
 import calc.system
 
 
-def longest_path(system, output_name):
-    """
-    :param system:
-    :param output_name:
-    :return:
-    """
-    G = system.make_graph()
-
-    """
-    The rest of this function is copied from networkx.algorithms.dag.dag_longest_path, 
-    with a small change to return the longest path that ends at a specified node
-    rather than the longest path overall. The networkx code has the following license: 
-    
-    Copyright (C) 2004-2012, NetworkX Developers
-    Aric Hagberg <hagberg@lanl.gov>
-    Dan Schult <dschult@colgate.edu>
-    Pieter Swart <swart@lanl.gov>
-    All rights reserved.
-    
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions are
-    met:
-    
-      * Redistributions of source code must retain the above copyright
-        notice, this list of conditions and the following disclaimer.
-    
-      * Redistributions in binary form must reproduce the above
-        copyright notice, this list of conditions and the following
-        disclaimer in the documentation and/or other materials provided
-        with the distribution.
-    
-      * Neither the name of the NetworkX Developers nor the names of its
-        contributors may be used to endorse or promote products derived
-        from this software without specific prior written permission.
-    
-    
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.     
-    """
-    dist = {}  # stores [node, distance] pair
-    for node in nx.topological_sort(G):
-        # pairs of dist,node for all incoming edges
-        pairs = [(dist[v][0] + 1, v) for v in G.pred[node]]
-        if pairs:
-            dist[node] = max(pairs)
-        else:
-            dist[node] = (0, node)
-    node, (length, _) = output_name, dist[output_name] # original code: node, (length, _) = max(dist.items(), key=lambda x: x[1])
-
-    path = []
-    while length > 0:
-        path.append(node)
-        length, node = dist[node]
-    return list(reversed(path))
-
-
-def none_max(a):
-    """
-    :param a: list containing numbers and None
-    :return: max of the numbers
-    """
-    max = -np.inf
-    for item in a:
-        if item is not None and item > max:
-            max = item
-    return max
-
-
 class Candidate:
-    # TODO: This code assumes the network has a single input.
 
-    def __init__(self, system):
+    def __init__(self, system, max_cumulative_stride):
         """
         Initializes a stride-pattern candidate with null strides.
 
-        :param system: the System for which strides are to be proposed
+        :param system: the System for which candidate strides are to be proposed
+        :param max_cumulative_stride: maximum cumulative stride through the system along
+            any feedforward path; this would nornally be the resolution of the
+            input image, to prevent later feature maps from having less than
+            one-pixel resolution
         """
 
         self.system = system
+        self.max_cumulative_stride = max_cumulative_stride
+
         self.strides = [None for projection in system.projections]
         self.cumulatives = [None for population in system.populations]
 
         input_index = system.find_population_index(system.input_name)
         self.cumulatives[input_index] = 1
-            
 
-    def init_path(self, path, max_cumulative, min_stride=1, max_stride=3, max_attempts=10000):
+    def fill(self):
+        """
+        Fills in None strides in the network with candidate values.
+        """
+
+        while max([x is None for x in self.strides]):
+            path = self._longest_unset_path()
+            # print(path)
+
+            start_cumulative = self.cumulatives[self.system.find_population_index(path[0])]
+            end_cumulative = self.cumulatives[self.system.find_population_index(path[-1])]
+
+            steps = len(path) - 1
+            max_stride = Candidate._get_max_stride(self.max_cumulative_stride, steps)
+
+            if end_cumulative is not None:
+                if start_cumulative is not None:
+                    max_stride = Candidate._get_max_stride(end_cumulative/start_cumulative, steps)
+                else:
+                    max_stride = Candidate._get_max_stride(end_cumulative, steps)
+
+            # print('start c: {} end c: {} max stride: {} len: {}'.format(start_cumulative, end_cumulative, max_stride, len(path)-1))
+            self.init_path(path, exact_cumulative=end_cumulative, max_stride=max_stride)
+
+    @staticmethod
+    def _get_max_stride(cumulative_stride, steps):
+        return int(np.ceil(2 * cumulative_stride ** (1 / steps)))
+
+    def _longest_unset_path(self):
+        """
+        :return: Longest path through the network that includes only connections for which
+            the stride has not yet been determined for this Candidate
+        """
+        graph = self.system.make_graph()
+
+        for i in range(len(self.system.projections)):
+            if self.strides[i] is not None:
+                origin = self.system.projections[i].origin.name
+                termination = self.system.projections[i].termination.name
+                graph.remove_edge(origin, termination)
+
+        return nx.algorithms.dag.dag_longest_path(graph)
+
+    def init_path(self, path, exact_cumulative=None, min_stride=1, max_stride=3, max_attempts=10000):
         """
         Sets strides along the path to integer values between min_stride and
-        max_stride. A list of strides is sampled at random, and rejected if the
+        max_stride. Strides are sampled at random, and rejected if the
         cumulative stride along the path (product of all strides) is greater than
-        max_cumulative.
+        max_cumulative, and/or not equal to exact_cumulative (if this is not None).
+        This method does not change strides that have been set previously.
 
-        This method should be called once for each output of the network. This call
-        does not change strides that are set before the call.
-
-        :param path: a path (list of node names) along which to choose random strides
-        :param max_cumulative: maximum cumulative stride through the path
+        :param path: a path, in the form of a list of node names, along which to choose random strides
+        :param exact_cumulative (default None): if not None, defines the exact cumulative stride
+            required at the end of the path (for consistency with other strides in the network)
+        :param min_stride (default 1): minimum random stride value
+        :param max_stride (default 3): maximum random stride value
         """
 
-        for attempt in range(max_attempts):
-            # print('attempt: {}'.format(attempt))
+        done = False
 
+        for attempt in range(max_attempts):
             # make copies in case we have to revert
             strides = self.strides[:]
             cumulatives = self.cumulatives[:]
@@ -143,98 +117,43 @@ class Candidate:
             for i in range(len(path) - 1):
                 projection_ind = self.system.find_projection_index(path[i], path[i+1])
                 if strides[projection_ind] is None:
-                    strides[projection_ind] = np.random.randint(min_stride, max_stride)
-
+                    strides[projection_ind] = np.random.randint(min_stride, max_stride+1)
                     pre_ind = self.system.find_population_index(path[i])
                     post_ind = self.system.find_population_index(path[i+1])
                     cumulatives[post_ind] = cumulatives[pre_ind] * strides[projection_ind]
 
-            if none_max(cumulatives) <= max_cumulative:
-                self.strides = strides
-                self.cumulatives = cumulatives
-                break
+            end_cumulative = cumulatives[self.system.find_population_index(path[-1])]
 
-        if max(cumulatives) > max_cumulative:
+            if exact_cumulative is None or exact_cumulative == end_cumulative:
+                if end_cumulative <= self.max_cumulative_stride:
+                    self.strides = strides
+                    self.cumulatives = cumulatives
+                    done = True
+                    break
+
+        if not done:
             print('initialization failed')
 
-    def fill(self, max_attempts=10000):
-        """
-        To be called after initializing longest paths to all outputs. This
-        method fills in remaining strides.
-
-        TODO: not sure how to efficiently update cumulatives if we fill
-        middle of multi-step path -- maybe wait until end and fill any missing
-        by stepping forward -- can't really since
-        """
-        for attempt in range(max_attempts):
-            strides = self.strides[:]
-            cumulatives = self.cumulatives[:]
-
-            remaining_ind = []
-            for i in range(len(strides)):
-                if strides[i] is None:
-                    remaining_ind.append(i)
-
-            while len(remaining_ind) > 0:
-                pass
-
-
-# def make_net_from_system(system, image_layer=0, image_channels=3.):
-#     """
-#     :return: A neural network architecture with the same nodes and connections as the given
-#         neurophysiological system architecture, and otherwise random hyperparameters
-#         (to be optimized separately)
-#     """
-#     net = Network()
-#
-#     for i in range(len(system.populations)):
-#         pop = system.populations[i]
-#         units = pop.n
-#
-#         if i == image_layer:
-#             channels = image_channels
-#             pixels = round(np.sqrt(units/image_channels))
-#         else:
-#             ratio_channels_over_pixels = np.exp(-1.5 + 3*np.random.rand())
-#             pixels = round(np.cbrt(units / ratio_channels_over_pixels))
-#             channels = round(ratio_channels_over_pixels * pixels)
-#         net.add(pop.name, channels, pixels)
-#
-#     # try to set strides to reasonable values
-#     for i in range(len(system.populations)):
-#         pres = system.find_pre(system.populations[i].name)
-#         units = net.layers[i].m * net.layers[i].width**2
-#
-#         if len(pres) > 0:
-#             pre_ind = system.find_population_index(pres[0].name)
-#             net.layers[i].width = net.layers[pre_ind].width / 1.5
-#             net.layers[i].m = units / net.layers[i].width**2
-#
-#     for projection in system.projections:
-#         pre = net.find_layer(projection.origin.name)
-#         post = net.find_layer(projection.termination.name)
-#
-#         # c = projection.f
-#         c = .1 + .2*np.random.rand()
-#         s = 1. + 9.*np.random.rand()
-#         rf_ratio = projection.termination.w / projection.origin.w
-#         w = (rf_ratio - 1.) / (0.5 + np.random.rand())
-#         w = np.maximum(.1, w)  # make sure kernel has +ve width
-#         sigma = .1 + .1*np.random.rand()
-#         net.connect(pre, post, c, s, w, sigma)
-#
-#     return net
 
 if __name__ == '__main__':
-    system = calc.system.get_example_small()
-    path = longest_path(system, 'V4_5')
-    print(path)
+    # system = calc.system.get_example_small()
+    system = calc.system.get_example_medium()
+    # path = longest_path(system, 'V4_5')
+    # print(path)
 
-    candidate = Candidate(system)
-    candidate.init_path(path, 32)
+    candidate = Candidate(system, 32)
+    candidate.fill()
+    print(candidate.strides)
+    print(candidate.cumulatives)
 
-    for i in range(len(system.projections)):
-        projection = system.projections[i]
-        print('{}->{}: {}'.format(projection.origin.name, projection.termination.name, candidate.strides[i]))
+    for i in range(len(system.populations)):
+        print('{}: {}'.format(system.populations[i].name, candidate.cumulatives[i]))
 
-    # print(candidate.strides)
+
+    # candidate.init_path(path)
+    #
+    # for i in range(len(system.projections)):
+    #     projection = system.projections[i]
+    #     print('{}->{}: {}'.format(projection.origin.name, projection.termination.name, candidate.strides[i]))
+    #
+    # print(candidate.longest_unset_path())
