@@ -24,10 +24,10 @@ TODO: This code assumes the network has a single input.
 
 import numpy as np
 import networkx as nx
-import calc.system
+import calc.system, calc.network
 
 
-class Candidate:
+class StridePattern:
 
     def __init__(self, system, max_cumulative_stride):
         """
@@ -62,13 +62,13 @@ class Candidate:
             end_cumulative = self.cumulatives[self.system.find_population_index(path[-1])]
 
             steps = len(path) - 1
-            max_stride = Candidate._get_max_stride(self.max_cumulative_stride, steps)
+            max_stride = StridePattern._get_max_stride(self.max_cumulative_stride, steps)
 
             if end_cumulative is not None:
                 if start_cumulative is not None:
-                    max_stride = Candidate._get_max_stride(end_cumulative/start_cumulative, steps)
+                    max_stride = StridePattern._get_max_stride(end_cumulative / start_cumulative, steps)
                 else:
-                    max_stride = Candidate._get_max_stride(end_cumulative, steps)
+                    max_stride = StridePattern._get_max_stride(end_cumulative, steps)
 
             # print('start c: {} end c: {} max stride: {} len: {}'.format(start_cumulative, end_cumulative, max_stride, len(path)-1))
             self.init_path(path, exact_cumulative=end_cumulative, max_stride=max_stride)
@@ -80,7 +80,7 @@ class Candidate:
     def _longest_unset_path(self):
         """
         :return: Longest path through the network that includes only connections for which
-            the stride has not yet been determined for this Candidate
+            the stride has not yet been determined for this StridePattern
         """
         graph = self.system.make_graph()
 
@@ -134,6 +134,52 @@ class Candidate:
         if not done:
             print('initialization failed')
 
+def initialize_network(system, candidate, image_layer=0, image_channels=3.):
+    """
+    :param system TODO
+    :param candidate TODO
+    :param image_layer TODO
+    :param image_channels TODO
+    :return: A neural network architecture with the same nodes and connections as the given
+        neurophysiological system architecture, the given stride pattern, with other
+        hyperparameters initialized randomly.
+    """
+    net = calc.network.Network()
+
+    approx_image_resolution = np.sqrt(system.populations[image_layer].n/image_channels)
+    max_cumulative_stride = np.max(candidate.cumulatives)
+    image_resolution = round(approx_image_resolution / max_cumulative_stride) * max_cumulative_stride
+
+    for i in range(len(system.populations)):
+        pop = system.populations[i]
+
+        if i == image_layer:
+            channels = image_channels
+            pixels = image_resolution
+        else:
+            pixels = image_resolution / candidate.cumulatives[i]
+            channels = round(pop.n / pixels**2)
+
+        net.add(pop.name, channels, pixels)
+
+    for i in range(len(system.projections)):
+        projection = system.projections[i]
+        pre = net.find_layer(projection.origin.name)
+        post = net.find_layer(projection.termination.name)
+
+        stride = candidate.strides[i]
+
+        c = .1 + .2*np.random.rand()
+        sigma = .1 + .1*np.random.rand()
+
+        rf_ratio = projection.termination.w / projection.origin.w
+        w = (rf_ratio - 1.) / (0.5 + np.random.rand())
+        w = np.maximum(.1, w)  # make sure kernel has +ve width
+
+        net.connect(pre, post, c, stride, w, sigma)
+
+    return net
+
 
 if __name__ == '__main__':
     # system = calc.system.get_example_small()
@@ -141,14 +187,16 @@ if __name__ == '__main__':
     # path = longest_path(system, 'V4_5')
     # print(path)
 
-    candidate = Candidate(system, 32)
+    candidate = StridePattern(system, 32)
     candidate.fill()
-    print(candidate.strides)
-    print(candidate.cumulatives)
 
-    for i in range(len(system.populations)):
-        print('{}: {}'.format(system.populations[i].name, candidate.cumulatives[i]))
+    # print(candidate.strides)
+    # print(candidate.cumulatives)
+    # for i in range(len(system.populations)):
+    #     print('{}: {}'.format(system.populations[i].name, candidate.cumulatives[i]))
 
+    net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
+    net.print()
 
     # candidate.init_path(path)
     #
