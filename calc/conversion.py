@@ -508,6 +508,93 @@ def print_gradients(cost, vars):
             print('grad wrt {}: {}'.format(vars[i].name, sess.run(gradients[i])))
 
 
+def make_optimal_network(system):
+    net = make_net_from_system(system)
+    cost = Cost(system, net)
+    c = cost.match_cost_n(1.) \
+        + cost.match_cost_w(1.) \
+        + cost.match_cost_e(1.) \
+        + cost.match_cost_f(1.) \
+        + cost.match_cost_b(1.) \
+        + cost.constraint_cost(1.)
+
+    optimizer = tf.train.AdamOptimizer()
+    vars = cost.network.collect_variables()
+    opt_op = optimizer.minimize(c, var_list=vars)
+
+    # opt_fast = tf.train.AdamOptimizer()
+    c_e = cost.match_cost_e(1.)
+    opt_op_e = optimizer.minimize(c_e, var_list=cost.network.sigma)
+
+    c_partial = cost.match_cost_f(1.) + cost.match_cost_e(1.)
+    vars_partial = []
+    vars_partial.extend(cost.network.c)
+    vars_partial.extend(cost.network.sigma)
+    opt_op_partial = optimizer.minimize(c_partial, var_list=vars_partial)
+
+    clip_ops = []
+    clip_ops.extend(get_clip_ops(cost.network.c))
+    clip_ops.extend(get_clip_ops(cost.network.sigma))
+
+    init = tf.global_variables_initializer()
+    with tf.Session() as sess:
+        sess.run(init)
+
+        update_net_from_tf(sess, net, cost.network)
+
+        # net.print()
+        # cost.compare_system(system, sess)
+
+        print('optimize e')
+        for i in range(10):
+            optimize_net(sess, opt_op_e, clip_ops=clip_ops)
+            cost_i = sess.run(c_e)
+            print('cost: {}'.format(cost_i))
+
+        update_net_from_tf(sess, net, cost.network)
+        net.print()
+        cost.compare_system(system, sess)
+
+        print('optimize f and e')
+        for i in range(20):
+            optimize_net(sess, opt_op_partial, clip_ops=clip_ops)
+            cost_i = sess.run(c_partial)
+            print('cost: {}'.format(cost_i))
+
+        update_net_from_tf(sess, net, cost.network)
+        net.print()
+        cost.compare_system(system, sess)
+
+        print('optimize full')
+        cost_best = 1e10
+        for i in range(20): #TODO: more iterations here
+            optimize_net(sess, opt_op, clip_ops=clip_ops)
+
+            cost_i = sess.run(c)
+            print('cost: {}'.format(cost_i))
+
+            if cost_i < cost_best:
+                cost_best = cost_i
+                update_net_from_tf(sess, net, cost.network)
+
+            if i % 20 == 0:
+                print(sess.run(cost.match_cost_n(1.)))
+                print(sess.run(cost.match_cost_w(1.)))
+                print(sess.run(cost.match_cost_e(1.)))
+                print(sess.run(cost.match_cost_f(1.)))
+                print(sess.run(cost.match_cost_b(1.)))
+
+            if np.isnan(cost_i):
+                print('optimization failed')
+                break
+
+        # update_net_from_tf(sess, net, cost.network)
+        net.print()
+
+        cost.compare_system(system, sess)
+        return net
+
+
 if __name__ == '__main__':
     from calc.system import get_example_small, get_example_medium
     system = get_example_small()
