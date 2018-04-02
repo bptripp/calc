@@ -1,3 +1,5 @@
+import tensorflow as tf
+
 # TODO: consider changing w -> w_k and width -> w_map
 
 class Layer:
@@ -57,7 +59,6 @@ class Network:
                 break
         return result
 
-
     def print(self):
         for layer in self.layers:
             print('{} (m={:2.2f} width={:2.2f})'.format(layer.name, layer.m, layer.width))
@@ -66,3 +67,13 @@ class Network:
             print('{} -> {} (c={:8.6f} s={:2.2f} w={:2.2f} sigma={:8.6f})'.format(
                 conn.pre.name, conn.post.name, conn.c, conn.s, conn.w, conn.sigma))
 
+    def find_inbounds(self, layer_name):
+        """
+        :param layer_name: Name of a layer in the network
+        :return: List of connections that provide input to the layer
+        """
+        result = []
+        for connection in self.connections:
+            if connection.post.name == layer_name:
+                result.append(connection)
+        return result
