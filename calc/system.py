@@ -15,7 +15,16 @@ class Population:
         self.e = e
         self.w = w
 
+    def get_description(self):
+        return '{} (#neurons={}; in-degree={}; RF-width={})'.format(self.name, self.n, self.e, self.w)
 
+    def is_input(self):
+        """
+        :return: True if this population is an input to the model (this is true of the # extrinsic inputs
+            per neuron is 0); False otherwise
+        """
+
+#TODO: do I really need subclasses or can I have f and b, possibly None, f ignored if b not None?
 class Projection:
     def __init__(self, origin, termination):
         """
@@ -24,6 +33,9 @@ class Projection:
         """
         self.origin = origin
         self.termination = termination
+
+    def get_description(self):
+        return '{}->{}'.format(self.origin.name, self.termination.name)
 
 
 class InterAreaProjection(Projection):
@@ -36,6 +48,9 @@ class InterAreaProjection(Projection):
         """
         Projection.__init__(self, origin, termination)
         self.f = f
+
+    def get_description(self):
+        return '{} (FLNe={})'.format(Projection.get_description(), self.f)
 
 
 class InterLaminarProjection(Projection):
@@ -50,6 +65,9 @@ class InterLaminarProjection(Projection):
         Projection.__init__(self, origin, termination)
         self.b = b
 
+    def get_description(self):
+        return '{} (synapses-per-target={})'.format(Projection.get_description(self), self.b)
+
 
 class System:
     def __init__(self):
@@ -59,10 +77,12 @@ class System:
 
     def add_input(self, n, w):
         """
-        Adds a special population that represents the network input.
+        Adds a special population that represents the network input. If a parameter value is
+        unknown, it should be given as None.
 
         :param n: number of units
         :param w: width of an image pixel in degrees visual angle
+        :param name (optional): Defaults to 'INPUT'
         """
         self.populations.append(Population(self.input_name, n, 0, w))
 
@@ -144,6 +164,13 @@ class System:
             graph.add_edge(projection.origin.name, projection.termination.name)
 
         return graph
+
+    def print_description(self):
+        for population in self.populations:
+            print(population.get_description())
+
+        for projection in self.projections:
+            print(projection.get_description())
 
 
 def get_example_system():
