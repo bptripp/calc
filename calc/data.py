@@ -216,7 +216,7 @@ BDM04_excitatory_types = {
     '4': ['ss4(L4)', 'ss4(L2/3)', 'p4'],
     '5': ['p5(L2/3)', 'p5(L5/6)'],
     '6': ['p6(L4)', 'p6(L5/6)'],
-    'extrinsic': ['as']
+    'extrinsic': ['X/Y', 'as']
 }
 
 # Extracted from Fig 9A via WebPlotDigitizer; needed to check import of tables in supplementary material
@@ -560,15 +560,16 @@ Trends in cognitive sciences, 17(1), 26-49.
 Op De Beeck, H., & Vogels, R. (2000). Spatial sensitivity of macaque inferior temporal neurons. 
 Journal of Comparative Neurology, 426(4), 505-518.
 """
+# TODO: closer look at this
 RF_diameter_5_degrees_eccentricity = {
-    'V1': None,
-    'V2': None,
-    'V4': None,
-    'MT': None,
-    'MST': None,
+    'V1': 1,
+    'V2': 2,
+    'V4': 4,
+    'MT': 5,
+    'MST': 25,
     'AIP': None,
     'TEO': None,
-    'TEav': None
+    'TEpd': 10
 }
 
 def get_RF_size(area):
@@ -878,6 +879,39 @@ Or a Yerkes19 flatmap could be mapped to the flatmap in C. E. Collins, D. C. Air
 J. H. Kaas, “Neuron densities vary across and within cortical areas in primates.,” Proc. Natl. Acad. Sci. U. S. A., 
 vol. 107, no. 36, pp. 15927–32, Sep. 2010.
 """
+
+
+class Markov:
+    """
+    Data from Markov et al. (2014) Journal of Comparative Neurology and Markov et al. (2014) Cerebral Cortex.
+    """
+    # TODO: docs, explain averaging over hemispheres
+
+    def __init__(self):
+        [self.source_FLN, self.target_FLN, self.fraction_FLN] = _read_fraction_labelled_neurons_extrinsic()
+        [self.source_SLN, self.target_SLN, self.percent_SLN] = _read_supragranular_layers_percent()
+
+    def get_sources(self, target):
+        result = []
+        for i in range(len(self.source_FLN)):
+            if self.target_FLN[i] == target:
+                result.append(self.source_FLN[i])
+        return list(set(result))
+
+    def get_FLNe(self, source, target):
+        result = []
+        for i in range(len(self.source_FLN)):
+            if self.source_FLN[i] == source and self.target_FLN[i] == target:
+                result.append(self.fraction_FLN[i])
+        return np.mean(result)
+
+    def get_SLN(self, source, target):
+        result = []
+        for i in range(len(self.source_SLN)):
+            if self.source_SLN[i] == source and self.target_SLN[i] == target:
+                result.append(self.percent_SLN[i])
+        return np.mean(result)
+
 
 def _read_fraction_labelled_neurons_extrinsic():
     sources = []
@@ -1204,14 +1238,17 @@ if __name__ == '__main__':
 
     # print(synapses_per_neuron('V2', '4', '2/3'))
     # print(synapses_per_neuron('V2', '2/3', '5'))
+    # print(synapses_per_neuron('MT', 'extrinsic', '6'))
 
-    c = CoCoMac()
-    # print('FV91-{}'.format(c._map_M14_to_FV91('V1')))
-    # print('FV91-{}'.format(c._map_M14_to_FV91('MST')))
-    layers = c.data['FV91-{}'.format(c._map_M14_to_FV91('V1'))]['FV91-{}'.format(c._map_M14_to_FV91('MT'))]
-    print(layers)
-    # print(c._guess_missing_layers('V1', 'MSTd', layers))
-    # print(c.get_connection_details('V1', 'V4'))
+    # c = CoCoMac()
+    # # print('FV91-{}'.format(c._map_M14_to_FV91('V1')))
+    # # print('FV91-{}'.format(c._map_M14_to_FV91('MST')))
+    # layers = c.data['FV91-{}'.format(c._map_M14_to_FV91('V1'))]['FV91-{}'.format(c._map_M14_to_FV91('MT'))]
+    # print(layers)
+    # # print(c._guess_missing_layers('V1', 'MSTd', layers))
+    # # print(c.get_connection_details('V1', 'V4'))
+    #
+    # # c._print_fraction_asymmetric('6')
+    # # print(c._map_axon_termination_layers_to_cell_layers([True, False, False, False, False, True]))
 
-    # c._print_fraction_asymmetric('6')
-    # print(c._map_axon_termination_layers_to_cell_layers([True, False, False, False, False, True]))
+    m = Markov()
