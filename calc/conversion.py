@@ -2,6 +2,8 @@ from calc.system import InterLaminarProjection, InterAreaProjection
 from calc.network import Network
 import tensorflow as tf
 import numpy as np
+from calc.stride import StridePattern, initialize_network
+import pickle
 
 #TODO: refactor finer-grained cost objects that encapsulate individual terms, associated NetworkVariables & SystemConstants
 
@@ -58,18 +60,20 @@ class NetworkVariables:
         # hyperparameters wrapped as TF variables ...
         self.m = [] # number of feature maps in each layer
         self.width = [] # width of feature maps each layer
-        self.m_scaled = []
-        self.width_scaled = []
+        # self.m_scaled = []
+        # self.width_scaled = []
 
         self.c = [] # fraction of feature maps in pre layer that contribute to each connection
         self.sigma = [] # pixel-wise sparsity of each connection
 
         # an additional variable from which some connection hyperparams are derived ...
         self.w_rf = [] # RF width of each layer in degrees visual angle
-        self.w_rf_scaled = []
+        # self.w_rf_scaled = []
 
-        # hyperparams derived from w_rf and other hyperparams
+        # set separately (not suitable for gradient descent)
         self.s = [] # stride of each connection
+
+        # derived from w_rf and other hyperparams
         self.w = [] # kernel widths
 
         # supporting information ...
@@ -80,17 +84,20 @@ class NetworkVariables:
 
         for layer in network.layers:
             # rescale large variables for optimization
-            scale = (layer.m + layer.width) / 2.
-            scale_constant = tf.constant(scale, dtype=tf.float32)
+            # scale = (layer.m + layer.width) / 2.
+            # scale_constant = tf.constant(scale, dtype=tf.float32)
 
-            m_scaled = get_variable('{}-m_s'.format(layer.name), layer.m/scale)
-            self.m_scaled.append(m_scaled)
+            # m_scaled = get_variable('{}-m_s'.format(layer.name), layer.m/scale)
+            # self.m_scaled.append(m_scaled)
 
-            width_scaled = get_variable('{}-width_s'.format(layer.name), layer.width/scale)
-            self.width_scaled.append(width_scaled)
+            # width_scaled = get_variable('{}-width_s'.format(layer.name), layer.width/scale)
+            # self.width_scaled.append(width_scaled)
 
-            self.m.append(scale_constant * m_scaled)
-            self.width.append(scale_constant * width_scaled)
+            # self.m.append(scale_constant * m_scaled)
+            # self.width.append(scale_constant * width_scaled)
+
+            self.m.append(tf.constant(layer.m, dtype=tf.float32))
+            self.width.append(tf.constant(layer.width, dtype=tf.float32))
 
             input_layers = []
             input_connections = []
@@ -107,16 +114,19 @@ class NetworkVariables:
         for population in system.populations:
             w_rf = 2. + 5.*np.random.rand() if population.w is None else population.w
 
-            scale = w_rf
-            scale_constant = tf.constant(scale, dtype=tf.float32)
+            # self.w_rf.append(tf.constant(w_rf, dtype=tf.float32))
+            self.w_rf.append(get_variable('{}-w_rf_s'.format(population.name), w_rf))
 
-            w_rf_scaled = get_variable('{}-w_rf_s'.format(population.name), 1.)
-            self.w_rf_scaled.append(w_rf_scaled)
-            self.w_rf.append(scale_constant * w_rf_scaled)
+            # scale = w_rf
+            # scale_constant = tf.constant(scale, dtype=tf.float32)
+
+            # w_rf_scaled = get_variable('{}-w_rf_s'.format(population.name), 1.)
+            # self.w_rf_scaled.append(w_rf_scaled)
+            # self.w_rf.append(scale_constant * w_rf_scaled)
 
         # replace image-channels variable with constant (it shouldn't change) ...
-        self.m[image_layer] = tf.constant(float(network.layers[image_layer].m))
-        self.m_scaled[image_layer] = None
+        # self.m[image_layer] = tf.constant(float(network.layers[image_layer].m))
+        # self.m_scaled[image_layer] = None
 
         for connection in network.connections:
             conn_name = '{}-{}'.format(connection.pre.name, connection.post.name)
@@ -127,9 +137,11 @@ class NetworkVariables:
             self.c.append(get_variable('{}-c'.format(conn_name), connection.c))
             self.sigma.append(get_variable('{}-s'.format(conn_name), connection.sigma))
 
+            self.s.append(tf.constant(connection.s, dtype=tf.float32))
+
             # derived parameters ...
-            stride_name = '{}_{}_stride'.format(connection.pre.name, connection.post.name)
-            self.s.append(tf.divide(self.width[pre_ind], self.width[post_ind], name=stride_name)) # width j over width i
+            # stride_name = '{}_{}_stride'.format(connection.pre.name, connection.post.name)
+            # self.s.append(tf.divide(self.width[pre_ind], self.width[post_ind], name=stride_name)) # width j over width i
 
             pre_pixel_width = image_pixel_width * self.width[image_layer] / self.width[pre_ind]
             # convert RF sizes from degrees visual angle to pre-layer pixels ...
@@ -152,14 +164,15 @@ class NetworkVariables:
     def collect_variables(self):
         vars = []
 
-        # note one of the m's is a constant
-        for i in range(len(self.m)):
-            if self.m_scaled[i] is not None:
-                vars.append(self.m_scaled[i])
+        # # note one of the m's is a constant
+        # for i in range(len(self.m)):
+        #     if self.m_scaled[i] is not None:
+        #         vars.append(self.m_scaled[i])
 
-        vars.extend(self.width_scaled)
+        # vars.extend(self.width_scaled)
         vars.extend(self.c)
-        vars.extend(self.w_rf_scaled)
+        # vars.extend(self.w_rf_scaled)
+        vars.extend(self.w_rf)
         vars.extend(self.sigma)
 
         return vars
@@ -265,7 +278,10 @@ class Cost:
                 b_network = self._get_b_network(ij)
                 terms.append(norm_squared_error(b_system, b_network))
 
-        return tf.constant(kappa) * tf.reduce_mean(terms)
+        if len(terms) == 0:
+            return tf.constant(0.)
+        else:
+            return tf.constant(kappa) * tf.reduce_mean(terms)
 
     def _get_b_network(self, ij):
         j = self.network.pres[ij]
@@ -291,7 +307,10 @@ class Cost:
                 term = norm_squared_error(f_system, f_network)
                 terms.append(term)
 
-        return tf.constant(kappa) * tf.reduce_mean(terms)
+        if len(terms) == 0:
+            return tf.constant(0.)
+        else:
+            return tf.constant(kappa) * tf.reduce_mean(terms)
 
     def _get_f_network(self, ij):
         n_network_ij = self.n_contrib(ij)
@@ -355,13 +374,20 @@ class Cost:
         :param kappa: weight relative to other costs
         :return: Cost for soft constraints on parameters
         """
-        return bounds(self.network.w, min=1.) \
-            + bounds(self.network.m, min=1.) \
-            + bounds(self.network.width, min=1.) \
+        # We don't need >1 bounds on m and w because these are set separately
+        return bounds(self.network.width, min=1.) \
             + bounds(self.network.s, min=0.1) \
             + bounds(self.network.c, min=1e-2, max=1.) \
             + bounds(self.network.sigma, min=1e-3, max=1.) \
             + bounds(self.network.w_rf, min=1e-3)
+
+    def sparsity_constraint_cost(self, kappa):
+        """
+        :param kappa: weight relative to other costs
+        :return: Cost for soft constraints on parameters related to connection sparsity
+        """
+        return bounds(self.network.c, min=1e-2, max=1.) \
+            + bounds(self.network.sigma, min=1e-3, max=1.)
 
     def compare_system(self, system, sess):
         """
@@ -375,16 +401,19 @@ class Cost:
             n = round(sess.run(self._get_n_network(i)))
             e = sess.run(self._get_e_network(i))
             w = sess.run(self.network.w_rf[i])
-            print('{} n:[{}|{}] e:[{}|{:10.6f}] w:[{}|{:10.6f}]'.format(pop.name, pop.n, n, pop.e, e, pop.w, w))
+            # print('{} n:[{}|{}] e:[{}|{:10.6f}] w:[{}|{:10.6f}]'.format(pop.name, pop.n, n, pop.e, e, pop.w, w))
+            print('{}, {}, {}, {:10.6f}, {}, {:10.6f};'.format(pop.n, n, pop.e, e, pop.w, w))
 
         for ij in range(len(system.projections)):
             projection = system.projections[ij]
             if isinstance(projection, InterAreaProjection):
                 f = sess.run(self._get_f_network(ij))
-                print('{}->{} f:[{}|{:10.6f}]'.format(projection.origin.name, projection.termination.name, projection.f, f))
+                # print('{}->{} f:[{}|{:10.6f}]'.format(projection.origin.name, projection.termination.name, projection.f, f))
+                print('0, {}, {:10.6f};'.format(projection.f, f))
             elif isinstance(projection, InterLaminarProjection):
                 b = sess.run(self._get_b_network(ij))
-                print('{}->{} b:[{}|{:10.6f}]'.format(projection.origin.name, projection.termination.name, projection.b, b))
+                # print('{}->{} b:[{}|{:10.6f}]'.format(projection.origin.name, projection.termination.name, projection.b, b))
+                print('1, {}, {:10.6f};'.format(projection.b, b))
 
 
 def bounds(var_list, min=None, max=None):
@@ -488,10 +517,10 @@ def update_net_from_tf(sess, net, nv):
         net.connections[i].sigma = sess.run(nv.sigma[i])
 
 
-def optimize_net(sess, opt_op, clip_ops=[]):
+def optimize_net(sess, opt_op, iterations=100, clip_ops=[]):
 
     # gradients = tf.gradients(c, vars)
-    for i in range(100):
+    for i in range(iterations):
         # for i in range(len(vars)):
         #     if gradients[i] is not None:
         #         print('grad wrt {}: {}'.format(vars[i].name, sess.run(gradients[i])))
@@ -507,10 +536,108 @@ def print_gradients(cost, vars):
         if gradients[i] is not None:
             print('grad wrt {}: {}'.format(vars[i].name, sess.run(gradients[i])))
 
+def test_stride_patterns(system, n=5):
+    #TODO: consider keeping multiple graphs (https://www.tensorflow.org/programmers_guide/graphs#programming_with_multiple_graphs)
+
+    import matplotlib.pyplot as plt
+
+    nets = [None] * n
+    training_curves = [None] * n
+    for i in range(n):
+        tf.reset_default_graph()
+        nets[i], training_curves[i] = test_stride_pattern(system)
+        tc = np.array(training_curves[i])
+        print(tc.shape)
+        plt.semilogy(tc[:,0], tc[:,1])
+
+    data = {
+        'training_curves': training_curves,
+        'nets': nets
+    }
+    with open('calc-training.pickle', 'wb') as f:
+        pickle.dump(data, f)
+
+    plt.show()
+
+
+def test_stride_pattern(system):
+    candidate = StridePattern(system, 32)
+    candidate.fill()
+    net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
+
+    # net.print()
+    # print(candidate.cumulatives)
+    # print(candidate.strides)
+
+    optimizer = tf.train.AdamOptimizer()
+    cost = Cost(system, net)
+
+    # RF widths are very well initialized, so we don't have to do anything further with them
+    c = cost.match_cost_f(1.) \
+        + cost.match_cost_b(1.) \
+        + cost.match_cost_e(1.) \
+        + cost.sparsity_constraint_cost(1.)
+
+    pc = cost.param_cost(1.)
+    wc = cost.match_cost_w(1.)
+
+    # vars = cost.network.collect_variables()
+    vars = []
+    vars.extend(cost.network.c)
+    vars.extend(cost.network.sigma)
+
+    clip_ops = []
+    clip_ops.extend(get_clip_ops(cost.network.c))
+    clip_ops.extend(get_clip_ops(cost.network.sigma))
+
+    # c = cost.match_cost_w(1.) + cost.constraint_cost(1.)
+    # vars = cost.network.w_rf
+    # clip_ops = []
+
+    opt_op = optimizer.minimize(c, var_list=vars)
+
+    init = tf.global_variables_initializer()
+    with tf.Session() as sess:
+        sess.run(init)
+        update_net_from_tf(sess, net, cost.network)
+        net.print()
+
+        training_curve = []
+        training_curve.append((0, sess.run(c), sess.run(pc), sess.run(wc)))
+
+        # _print_cost(sess, cost)
+        print('cost: {} param-cost: {} RF-cost: {}'.format(sess.run(c), sess.run(pc), sess.run(wc)))
+
+        iterations = 100
+        for i in range(31):
+            optimize_net(sess, opt_op, iterations=iterations, clip_ops=clip_ops)
+            cost_i = sess.run(c)
+            cost_p_i = sess.run(pc)
+            cost_w_i = sess.run(wc)
+            print('cost: {} param-cost: {} RF-cost: {}'.format(cost_i, cost_p_i, cost_w_i))
+            training_curve.append((iterations*i, cost_i, cost_p_i, cost_w_i))
+            # _print_cost(sess, cost)
+
+        update_net_from_tf(sess, net, cost.network)
+        # net.print()
+        cost.compare_system(system, sess)
+
+    return net, training_curve
+
+def _print_cost(sess, cost):
+    cost_f = sess.run(cost.match_cost_f(1.))
+    cost_b = sess.run(cost.match_cost_b(1.))
+    cost_e = sess.run(cost.match_cost_e(1.))
+    cost_constraint = sess.run(cost.sparsity_constraint_cost(1.))
+    print('cost terms f:{} b:{} e:{} c:{}'.format(cost_f, cost_b, cost_e, cost_constraint))
+
 
 def make_optimal_network(system):
+
+
     net = make_net_from_system(system)
     cost = Cost(system, net)
+    # TODO: don't need n in optimization
     c = cost.match_cost_n(1.) \
         + cost.match_cost_w(1.) \
         + cost.match_cost_e(1.) \

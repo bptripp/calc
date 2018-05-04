@@ -568,8 +568,8 @@ RF_diameter_5_degrees_eccentricity = {
     'MT': 5,
     'MST': 25,
     'AIP': None,
-    'TEO': None,
-    'TEpd': 10
+    'TEO': 8, #interpolating here
+    'TEpd': 13
 }
 
 def get_RF_size(area):

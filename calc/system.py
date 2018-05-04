@@ -115,6 +115,7 @@ class System:
         self.projections.append(InterLaminarProjection(origin, termination, b))
 
     def find_population(self, name):
+        assert isinstance(name, str)
         result = None
         for population in self.populations:
             if population.name == name:
@@ -123,6 +124,7 @@ class System:
         return result
 
     def find_population_index(self, name):
+        assert isinstance(name, str)
         result = None
         for i in range(len(self.populations)):
             if self.populations[i].name == name:
@@ -131,6 +133,8 @@ class System:
         return result
 
     def find_projection(self, origin_name, termination_name):
+        assert isinstance(origin_name, str)
+        assert isinstance(termination_name, str)
         result = None
         for projection in self.projections:
             if projection.origin.name == origin_name and projection.termination.name == termination_name:
@@ -139,6 +143,7 @@ class System:
         return result
 
     def find_projection_index(self, origin_name, termination_name):
+        assert isinstance(termination_name, str)
         for i in range(len(self.projections)):
             projection = self.projections[i]
             if projection.origin.name == origin_name and projection.termination.name == termination_name:
@@ -146,13 +151,33 @@ class System:
                 break
         return result
 
-
     def find_pre(self, termination_name):
+        assert isinstance(termination_name, str)
+
         result = []
         for projection in self.projections:
             if projection.termination.name == termination_name:
                 result.append(projection.origin)
         return result
+
+    def prune_FLNe(self):
+        """
+        The fraction of extrinsic labelled neurons per source area is determined from tract-tracing
+        data. However, if a System does not contain all connections in the brain, the sum of these
+        fractions will be <1. This method rescales the fractions from the literature to fractions
+        within the model.
+        """
+        for population in self.populations:
+            total_FLNe = 0
+            for pre in self.find_pre(population.name):
+                projection = self.find_projection(pre.name, population.name)
+                if isinstance(projection, InterAreaProjection):
+                    total_FLNe += projection.f
+
+            for pre in self.find_pre(population.name):
+                projection = self.find_projection(pre.name, population.name)
+                if isinstance(projection, InterAreaProjection):
+                    projection.f = projection.f / total_FLNe
 
     def make_graph(self):
         graph = nx.DiGraph()
@@ -275,18 +300,26 @@ def get_example_medium():
 
 def get_layout(sys):
     areas = {}
-    areas['INPUT'] = [.15, .5]
-    areas['V1'] = [.2, .5]
-    areas['V2'] = [.25, .6]
+    areas['INPUT'] = [.075, .5]
+    areas['LGN'] = [.17, .5]
+    areas['V1'] = [.15, .5]
+    areas['V2'] = [.225, .6]
+    areas['V3'] = [.3, .7]
+    areas['V3A'] = [.35, .7]
     areas['V4'] = [.35, .4]
-    areas['TEO'] = [.4, .3]
-    areas['MT'] = [.45, .45]
-    areas['TEpd'] = [.5, .25]
-    areas['DP'] = [.4, .6]
+    areas['TEO'] = [.5, .23]
+    areas['MT'] = [.425, .55]
+    areas['MST'] = [.5, .55]
+    areas['VIP'] = [.7, .7]
+    areas['LIP'] = [.65, .65]
+    areas['TEpd'] = [.6, .25]
+    areas['DP'] = [.4, .5]
 
     offsets = {}
     offsets['4'] = 0
+    offsets['4Cbeta'] = 0
     offsets['23'] = .09
+    offsets['2/3'] = .09
     offsets['5'] = -.09
 
     result = {}

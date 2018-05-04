@@ -20,10 +20,12 @@ result. The algorithm is as follows:
 
 TODO: do we need to enumerate all options or just try random ones?
 TODO: This code assumes the network has a single input.
+TODO: respect max when starting somewhere other than input
 """
 
 import numpy as np
 import networkx as nx
+import calc.conversion
 import calc.system, calc.network
 
 
@@ -120,6 +122,7 @@ class StridePattern:
                     strides[projection_ind] = np.random.randint(min_stride, max_stride+1)
                     pre_ind = self.system.find_population_index(path[i])
                     post_ind = self.system.find_population_index(path[i+1])
+                    # print('pre-ind: {} proj-ind: {} {}*{}'.format(pre_ind, projection_ind, cumulatives[pre_ind], strides[projection_ind]))
                     cumulatives[post_ind] = cumulatives[pre_ind] * strides[projection_ind]
 
             end_cumulative = cumulatives[self.system.find_population_index(path[-1])]
@@ -172,9 +175,10 @@ def initialize_network(system, candidate, image_layer=0, image_channels=3.):
         c = .1 + .2*np.random.rand()
         sigma = .1 + .1*np.random.rand()
 
+        #TODO: this is reset in conversion
         rf_ratio = projection.termination.w / projection.origin.w
         w = (rf_ratio - 1.) / (0.5 + np.random.rand())
-        w = np.maximum(.1, w)  # make sure kernel has +ve width
+        w = np.minimum(1, w)  # make sure kernel has +ve width
 
         net.connect(pre, post, c, stride, w, sigma)
 
@@ -187,16 +191,23 @@ if __name__ == '__main__':
     # path = longest_path(system, 'V4_5')
     # print(path)
 
-    candidate = StridePattern(system, 32)
-    candidate.fill()
+    # candidate = StridePattern(system, 32)
+    # candidate.fill()
 
     # print(candidate.strides)
     # print(candidate.cumulatives)
     # for i in range(len(system.populations)):
     #     print('{}: {}'.format(system.populations[i].name, candidate.cumulatives[i]))
 
-    net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
-    net.print()
+    # net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
+    # net.print()
+
+    # net, training_curve = calc.conversion.test_stride_pattern(system)
+    # import matplotlib.pyplot as plt
+    # plt.semilogy(training_curve)
+    # plt.show()
+
+    calc.conversion.test_stride_patterns(system)
 
     # candidate.init_path(path)
     #
