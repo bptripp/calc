@@ -98,6 +98,8 @@ class L1Control(Regularizer):
 
         u = - self.pid_gains[0]*error - self.pid_gains[1]*self.error_integral - self.pid_gains[2]*error_derivative
         new_l1 = 10**(-u-5) - 10**(u-5)
+        if new_l1 < 0:
+            new_l1 = new_l1 / 10000
 
         print('control error: {} integral: {} derivative: {} u: {} l1: {}'.format(error, self.error_integral, error_derivative, u, new_l1))
         self.update(new_l1=new_l1)
