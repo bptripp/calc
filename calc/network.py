@@ -59,6 +59,14 @@ class Network:
                 break
         return result
 
+    def find_connection_index(self, pre_name, post_name):
+        result = None
+        for i in range(len(self.connections)):
+            if self.connections[i].pre.name == pre_name and self.connections[i].post.name == post_name:
+                result = i
+                break
+        return result
+
     def print(self):
         for layer in self.layers:
             print('{} (m={:2.2f} width={:2.2f})'.format(layer.name, layer.m, layer.width))
@@ -77,3 +85,15 @@ class Network:
             if connection.post.name == layer_name:
                 result.append(connection)
         return result
+
+    def find_outbounds(self, layer_name):
+        """
+        :param layer_name: Name of a layer in the network
+        :return: List of connections out of the layer
+        """
+        result = []
+        for connection in self.connections:
+            if connection.pre.name == layer_name:
+                result.append(connection)
+        return result
+
