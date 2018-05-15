@@ -398,7 +398,7 @@ class Cost:
             m_i = self.network.m[self.network.posts[i]]
             m_j = self.network.m[self.network.pres[i]]
             terms.append(tf.square(w_ij) * m_i * m_j)
-        return tf.constant(kappa) * tf.reduce_sum(terms)
+        return tf.constant(kappa) * tf.reduce_mean(terms)
 
     def constraint_cost(self, kappa):
         """
@@ -599,10 +599,6 @@ def test_stride_pattern(system):
     candidate.fill()
     net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
 
-    # net.print()
-    # print(candidate.cumulatives)
-    # print(candidate.strides)
-
     optimizer = tf.train.AdamOptimizer()
     cost = Cost(system, net)
 
@@ -611,36 +607,30 @@ def test_stride_pattern(system):
     c = cost.match_cost_f(1.) \
         + cost.match_cost_b(1.) \
         + cost.match_cost_e(1.) \
+        + cost.match_cost_w(1.) \
+        + cost.param_cost(1e-10) \
         + cost.sparsity_constraint_cost(1.)
-    # + cost.match_cost_w(1.) \
 
     pc = cost.param_cost(1.)
     wc = cost.match_cost_w(1.)
 
-    # vars = cost.network.collect_variables()
     vars = []
     vars.extend(cost.network.c)
     vars.extend(cost.network.sigma)
-    for w in cost.network.w:
-        if isinstance(w, tf.Variable):
-            vars.append(w)
+    for w_rf in cost.network.w_rf:
+        if isinstance(w_rf, tf.Variable):
+            vars.append(w_rf)
 
     clip_ops = []
     clip_ops.extend(get_clip_ops(cost.network.c))
     clip_ops.extend(get_clip_ops(cost.network.sigma))
-
-    # c = cost.match_cost_w(1.) + cost.constraint_cost(1.)
-    # vars = cost.network.w_rf
-    # clip_ops = []
 
     opt_op = optimizer.minimize(c, var_list=vars)
 
     init = tf.global_variables_initializer()
     with tf.Session() as sess:
         sess.run(init)
-        net.print()
         update_net_from_tf(sess, net, cost.network)
-        print('******************')
         net.print()
         print('******************')
 
@@ -651,7 +641,7 @@ def test_stride_pattern(system):
         print('cost: {} param-cost: {} RF-cost: {}'.format(sess.run(c), sess.run(pc), sess.run(wc)))
 
         iterations = 100
-        for i in range(31):
+        for i in range(201):
             optimize_net(sess, opt_op, iterations=iterations, clip_ops=clip_ops)
             cost_i = sess.run(c)
             cost_p_i = sess.run(pc)
@@ -661,7 +651,8 @@ def test_stride_pattern(system):
             # _print_cost(sess, cost)
 
         update_net_from_tf(sess, net, cost.network)
-        # net.print()
+        net.print()
+        print('******************')
         cost.compare_system(system, sess)
 
     return net, training_curve
