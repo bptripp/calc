@@ -562,14 +562,16 @@ Journal of Comparative Neurology, 426(4), 505-518.
 """
 # TODO: closer look at this
 RF_diameter_5_degrees_eccentricity = {
-    'V1': 1,
-    'V2': 2,
-    'V4': 4,
-    'MT': 5,
-    'MST': 25,
-    'AIP': None,
-    'TEO': 8, #interpolating here
-    'TEpd': 13
+    'V1': 1.3, # Gattass et al. (1981)
+    'V2': 2.2, # Gattass et al. (1981)
+    'V3': 2.8, # mean of Gattass et al. (1988) and Felleman & Van Essen (1987)
+    'V4': 4.8, # mean of Gattass et al. (1988) and Boussaoud et al. (1991)
+    'MT': 4.2, # mean of Komatsu et al. (1988) and Maunsell et al. (1987)
+    'V6': 7.7, # Galletti et al. (1999)
+    'MSTd': 16.0, # Komatsu et al. (1988)
+    'AIP': None, # but see Romero & Janssen (2016)
+    'TEO': 8.9, # Boussaoud et al. (1991)
+    'TEpd': 38.5 # for TE generally in 0-10deg range, from Boussaoud et al. (1991), but sites look fairly dorsal (Fig 4)
 }
 
 def get_RF_size(area):
@@ -937,6 +939,7 @@ def _read_supragranular_layers_percent():
     sources = []
     targets = []
     percents = []
+    distances = []
 
     with open('data_files/markov/JCN_2013 Table.csv') as csvfile:
         r = csv.reader(csvfile)
@@ -945,9 +948,10 @@ def _read_supragranular_layers_percent():
             if header_line:
                 header_line = False
             elif row[2] != 'NA' and len(row[2]) > 0:
-                sources.append(row[0])
-                targets.append(row[1])
+                sources.append(row[1])
+                targets.append(row[0])
                 percents.append(float(row[2]))
+                distances.append(float(row[3]))
 
     return sources, targets, percents
 
@@ -1252,3 +1256,5 @@ if __name__ == '__main__':
     # # print(c._map_axon_termination_layers_to_cell_layers([True, False, False, False, False, True]))
 
     m = Markov()
+    print(m.get_SLN('V2', 'TEpd'))
+    print(m.get_SLN('V3', 'TEpd'))
