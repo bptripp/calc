@@ -23,6 +23,7 @@ class Population:
         :return: True if this population is an input to the model (this is true of the # extrinsic inputs
             per neuron is 0); False otherwise
         """
+        return not self.e
 
 #TODO: do I really need subclasses or can I have f and b, possibly None, f ignored if b not None?
 class Projection:
@@ -196,6 +197,14 @@ class System:
 
         for projection in self.projections:
             print(projection.get_description())
+
+    def check_connected(self):
+        """
+        Checks that all populations in the system, except for the INPUT population, have at least one input.
+        """
+        for pop in self.populations:
+            if not pop.is_input():
+                assert self.find_pre(pop.name), '{} has no inputs'.format(pop.name)
 
 
 def get_example_system():
