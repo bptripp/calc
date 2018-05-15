@@ -176,9 +176,10 @@ def initialize_network(system, candidate, image_layer=0, image_channels=3.):
         sigma = .1 + .1*np.random.rand()
 
         #TODO: this is reset in conversion
-        rf_ratio = projection.termination.w / projection.origin.w
-        w = (rf_ratio - 1.) / (0.5 + np.random.rand())
-        w = np.minimum(1, w)  # make sure kernel has +ve width
+        # rf_ratio = projection.termination.w / projection.origin.w
+        # w = (rf_ratio - 1.) / (0.5 + np.random.rand())
+        # w = np.minimum(1, w)  # make sure kernel has +ve widths
+        w = 7
 
         net.connect(pre, post, c, stride, w, sigma)
 
