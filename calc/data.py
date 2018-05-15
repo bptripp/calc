@@ -1134,6 +1134,81 @@ def get_num_neurons(area, layer):
 
     return int(surface_area * density)
 
+def calculate_mean_ascending_SLN():
+    """
+    Calculates mean %SLN for connections that ascend the FV91 hierarchy.
+    This mean can be used as a fallback for connections not characterized
+    by Markov et al.
+    """
+
+    sources, targets, percents = _read_supragranular_layers_percent()
+    d = []
+    p = []
+    y = Yerkes19()
+
+    for i in range(len(sources)):
+        if sources[i] in y.areas and targets[i] in y.areas:
+            s = CoCoMac._map_M14_to_FV91(sources[i])
+            t = CoCoMac._map_M14_to_FV91(targets[i])
+            if s in FV91_hierarchy and t in FV91_hierarchy and FV91_hierarchy[t] > FV91_hierarchy[s]:
+                source_centre = y.get_centre(sources[i])
+                target_centre = y.get_centre(targets[i])
+                distance = np.linalg.norm(source_centre - target_centre)
+                d.append(distance)
+                p.append(percents[i])
+                print('{}->{}: {}'.format(sources[i], targets[i], distance))
+
+    print('Mean %SLN: {}'.format(np.mean(p)))
+
+    import matplotlib.pyplot as plt
+    plt.scatter(d, p)
+    plt.title('Not much correlation between %SLN and inter-area distance')
+    plt.show()
+
+def calculate_flne_vs_distance():
+    import pickle
+
+    # sources, targets, fractions = _read_fraction_labelled_neurons_extrinsic()
+    # y = Yerkes19()
+    # d = []
+    # f = []
+    #
+    # for i in range(len(sources)):
+    #     if sources[i] in y.areas and targets[i] in y.areas:
+    #         source_centre = y.get_centre(sources[i])
+    #         target_centre = y.get_centre(targets[i])
+    #         distance = np.linalg.norm(source_centre - target_centre)
+    #         d.append(distance)
+    #         f.append(fractions[i])
+    #         print('{}->{}: {}'.format(sources[i], targets[i], distance))
+    #
+    # with open('flne-and-distance.pkl', 'wb') as file:
+    #     pickle.dump((d, f), file)
+
+    with open('flne-and-distance.pkl', 'rb') as file:
+        (d, f) = pickle.load(file)
+
+    import matplotlib.pyplot as plt
+
+    f = np.array(f)
+    d = np.array(d)
+
+    a = np.ones((len(f),2))
+    a[:, 0] = d
+
+    r = np.corrcoef(d, np.log(f))
+
+    x, res, rank, s = np.linalg.lstsq(a, np.log(f))
+    approx = np.matmul(a, x)
+
+    print('Correlation between distance and log(FLNe): {}. Regression coefficients: {}'.format(r[0, 1], x))
+
+    plt.plot(d, np.log(f), '.')
+    plt.plot(d, approx, 'k.')
+    plt.xlabel('inter-area distance (mm)')
+    plt.ylabel('log(FLNe)')
+    plt.show()
+
 
 if __name__ == '__main__':
     # data = OC82_thickness_V1
@@ -1255,6 +1330,11 @@ if __name__ == '__main__':
     # # c._print_fraction_asymmetric('6')
     # # print(c._map_axon_termination_layers_to_cell_layers([True, False, False, False, False, True]))
 
-    m = Markov()
-    print(m.get_SLN('V2', 'TEpd'))
-    print(m.get_SLN('V3', 'TEpd'))
+    # m = Markov()
+    # print(m.get_SLN('V2', 'TEpd'))
+    # print(m.get_SLN('V3', 'TEpd'))
+
+    # calculate_mean_ascending_SLN()
+
+    calculate_flne_vs_distance()
+
