@@ -608,7 +608,7 @@ def test_stride_pattern(system):
         + cost.match_cost_b(1.) \
         + cost.match_cost_e(1.) \
         + cost.match_cost_w(1.) \
-        + cost.param_cost(1e-10) \
+        + cost.param_cost(1e-11) \
         + cost.sparsity_constraint_cost(1.)
 
     pc = cost.param_cost(1.)

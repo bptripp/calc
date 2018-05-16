@@ -14,9 +14,11 @@ import pickle
 
 
 if __name__ == '__main__':
-    with open('../../generated-files/calc-training-mini.pickle', 'rb') as f:
+    with open('../../generated-files/calc-training-mini2.pickle', 'rb') as f:
         data = pickle.load(f)
-    net = data['nets'][1] #smallest (Trainable params: 92,336,653) (Trainable params: 13,399,251 with pruning)
+
+    net = data['nets'][3] #25M, 39M, 53M, 7M, 35M
+    #smallest (Trainable params: 92,336,653) (Trainable params: 13,399,251 with pruning)
     # Trainable params: 4,481,743 with pruning and subsampling
     # New network has 54,597,314 params after pruning and subsampling
 

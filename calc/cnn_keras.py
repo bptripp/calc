@@ -102,7 +102,7 @@ def get_map_concatenation(map_list, indices):
     else:
         short_list = []
         for index in indices:
-            print('index: {} map_list size: {}'.format(index, len(map_list)))
+            # print('index: {} map_list size: {}'.format(index, len(map_list)))
             short_list.append(map_list[index])
         return keras.layers.concatenate(short_list)
 
@@ -128,13 +128,13 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
     input_name = 'INPUT'
     complete_layers = {input_name: input}
 
-    print(len(complete_layers))
-    print(complete_layers)
+    # print(len(complete_layers))
+    # print(complete_layers)
 
     while len(complete_layers) < len(net.layers):
         for layer in net.layers:
-            print('*****')
-            print(layer.name)
+            # print('*****')
+            # print(layer.name)
             if layer.name not in complete_layers.keys():
                 # add this layer if all its inputs are there already
                 inbounds = net.find_inbounds(layer.name)
@@ -154,7 +154,7 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
                         w = int(np.round(inbound.w))
                         s = int(np.round(inbound.s))
 
-                        print('origin: {} termination: {} m: {} w: {} stride: {}'.format(inbound.pre.name, layer.name, m, w, s))
+                        # print('origin: {} termination: {} m: {} w: {} stride: {}'.format(inbound.pre.name, layer.name, m, w, s))
                         name = '{}-{}'.format(inbound.pre.name, layer.name)
                         input_layer = complete_layers[inbound.pre.name]
 
@@ -170,7 +170,7 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
                             conv_layers.append(conv_layer)
 
                     if len(conv_layers) > 1:
-                        print('adding converging paths')
+                        # print('adding converging paths')
                         x = keras.layers.add(conv_layers)
                     else:
                         x = conv_layers[0]
