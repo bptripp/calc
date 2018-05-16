@@ -1132,7 +1132,8 @@ def get_num_neurons(area, layer):
     else:
         density = _get_neurons_per_mm2_V2(layer)
 
-    return int(surface_area * density)
+    # We multiply by 0.75 to match fraction excitatory cells; see Hendry et al. (1987) J Neurosci
+    return int(0.75 * surface_area * density)
 
 def calculate_mean_ascending_SLN():
     """

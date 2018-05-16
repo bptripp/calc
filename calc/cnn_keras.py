@@ -3,6 +3,7 @@ import copy
 import numpy as np
 import keras
 from keras.layers import Conv2D, Activation, BatchNormalization, Lambda, Concatenate
+from calc.sparsity import SnapToZero, L1Control
 
 
 def subsample_maps(net):
@@ -68,6 +69,25 @@ def prune_maps(net, subsample_indices, output_name):
     return new_subsample_indices
 
 
+def prune_connections(net, subsample_indices):
+    """
+    Remove connections with no subsample indices.
+
+    :param net:
+    :param subsample_indices:
+    :return:
+    """
+    new_connections = []
+    new_subsample_indices = []
+    for i in range(len(subsample_indices)):
+        if len(subsample_indices[i]) > 0:
+            new_connections.append(net.connections[i])
+            new_subsample_indices.append(subsample_indices[i])
+
+    net.connections = new_connections
+    return new_subsample_indices
+
+
 def get_map_list(x):
     result = []
     for i in range(x.shape[-1]):
@@ -82,6 +102,7 @@ def get_map_concatenation(map_list, indices):
     else:
         short_list = []
         for index in indices:
+            print('index: {} map_list size: {}'.format(index, len(map_list)))
             short_list.append(map_list[index])
         return keras.layers.concatenate(short_list)
 
@@ -112,6 +133,8 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
 
     while len(complete_layers) < len(net.layers):
         for layer in net.layers:
+            print('*****')
+            print(layer.name)
             if layer.name not in complete_layers.keys():
                 # add this layer if all its inputs are there already
                 inbounds = net.find_inbounds(layer.name)
@@ -127,9 +150,10 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
                     for inbound in inbounds:
                         inbound_index = net.find_connection_index(inbound.pre.name, inbound.post.name)
 
-                        m = int(layer.m)
-                        w = int(inbound.w)
-                        s = int(inbound.s)
+                        m = int(np.round(layer.m))
+                        w = int(np.round(inbound.w))
+                        s = int(np.round(inbound.s))
+
                         print('origin: {} termination: {} m: {} w: {} stride: {}'.format(inbound.pre.name, layer.name, m, w, s))
                         name = '{}-{}'.format(inbound.pre.name, layer.name)
                         input_layer = complete_layers[inbound.pre.name]
@@ -138,8 +162,11 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
                             ml = get_map_list(input_layer) #TODO: build a single list that's shared across connections
                             subsampled = get_map_concatenation(ml, subsample_indices[inbound_index])
 
-                            # conv_layer = Conv2D(m, (w, w), strides=(s, s), padding='same', name=name)(input_layer)
-                            conv_layer = Conv2D(m, (w, w), strides=(s, s), padding='same', name=name)(subsampled)
+                            conv_layer = Conv2D(m, (w, w), strides=(s, s), padding='same', name=name,
+                                                kernel_regularizer=L1Control(l1=0.0001, target=inbound.sigma),
+                                                kernel_constraint=SnapToZero()
+                                                )(subsampled)
+                            # conv_layer = Conv2D(m, (w, w), strides=(s, s), padding='same', name=name)(subsampled)
                             conv_layers.append(conv_layer)
 
                     if len(conv_layers) > 1:
