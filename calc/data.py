@@ -937,7 +937,8 @@ class Markov:
         else:
             c = CoCoMac()
             sources = c.get_source_areas(map_M14_to_FV91(target))
-            return [map_FV91_to_M14(source) for source in sources if source in yerkes19.areas]
+            sources = [map_FV91_to_M14(source) for source in sources]
+            return [source for source in sources if source in yerkes19.areas]
 
     def get_sources(self, target):
         result = []

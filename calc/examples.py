@@ -245,6 +245,8 @@ def make_big_system():
     system.check_connected()
     system.print_description()
 
+    return system
+
 
 def _pop_name(area, layer):
     return '{}_{}'.format(area, layer)
@@ -287,11 +289,13 @@ def make_small_system(miniaturize=False):
             if population.name != system.input_name:
                 population.n = population.n / 20
 
-    calc.conversion.test_stride_patterns(system)
+    system.print_description()
+
+    # calc.conversion.test_stride_patterns(system)
 
 
 if __name__ == '__main__':
     # make_small_system(miniaturize=True)
-    make_big_system()
-
+    system = make_big_system()
+    net, training_curve = calc.conversion.test_stride_patterns(system, n=1)
 

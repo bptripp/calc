@@ -157,6 +157,7 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
                         # print('origin: {} termination: {} m: {} w: {} stride: {}'.format(inbound.pre.name, layer.name, m, w, s))
                         name = '{}-{}'.format(inbound.pre.name, layer.name)
                         input_layer = complete_layers[inbound.pre.name]
+                        print('connecting {}'.format(name))
 
                         if subsample_indices[inbound_index]:
                             ml = get_map_list(input_layer) #TODO: build a single list that's shared across connections

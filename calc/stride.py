@@ -45,11 +45,33 @@ class StridePattern:
         self.system = system
         self.max_cumulative_stride = max_cumulative_stride
 
-        self.strides = [None for projection in system.projections]
-        self.cumulatives = [None for population in system.populations]
+        self.strides = [None] * len(system.projections)
+        self.cumulatives = [None] * len(system.populations)
+        self.min_cumulatives = [1] * len(system.populations)
+        self.max_cumulatives = [max_cumulative_stride] * len(system.populations)
 
         input_index = system.find_population_index(system.input_name)
         self.cumulatives[input_index] = 1
+
+    def _update_cumulative_stride_bounds(self):
+        graph = self.system.make_graph()
+
+        for i in range(len(self.system.populations)):
+            pop = self.system.populations[i]
+
+            # cumulative stride can't be less than that of ancestors
+            ancestors = nx.ancestors(graph, pop.name)
+            for ancestor in ancestors:
+                ancestor_index = self.system.find_population_index(ancestor)
+                if self.cumulatives[ancestor_index] is not None:
+                    self.min_cumulatives[i] = max(self.min_cumulatives[i], self.cumulatives[ancestor_index])
+
+            # cumulative stride can't be greater than that of descendants
+            descendants = nx.descendants(graph, pop.name)
+            for descendant in descendants:
+                descendant_index = self.system.find_population_index(descendant)
+                if self.cumulatives[descendant_index] is not None:
+                    self.max_cumulatives[i] = min(self.max_cumulatives[i], self.cumulatives[descendant_index])
 
     def fill(self):
         """
@@ -58,7 +80,7 @@ class StridePattern:
 
         while max([x is None for x in self.strides]):
             path = self._longest_unset_path()
-            # print(path)
+            print('Setting strides for path: {}'.format(path))
 
             start_cumulative = self.cumulatives[self.system.find_population_index(path[0])]
             end_cumulative = self.cumulatives[self.system.find_population_index(path[-1])]
@@ -72,12 +94,14 @@ class StridePattern:
                 else:
                     max_stride = StridePattern._get_max_stride(end_cumulative, steps)
 
-            # print('start c: {} end c: {} max stride: {} len: {}'.format(start_cumulative, end_cumulative, max_stride, len(path)-1))
+            # print('start c: {} end c: {} max c: {} max stride: {} len: {}'.format(
+            #     start_cumulative, end_cumulative, self.max_cumulative_stride, max_stride, len(path)-1))
             self.init_path(path, exact_cumulative=end_cumulative, max_stride=max_stride)
+            self._update_cumulative_stride_bounds()
 
     @staticmethod
     def _get_max_stride(cumulative_stride, steps):
-        return int(np.ceil(2 * cumulative_stride ** (1 / steps)))
+        return int(2 * np.floor(cumulative_stride ** (1 / steps)))
 
     def _longest_unset_path(self):
         """
@@ -116,19 +140,29 @@ class StridePattern:
             strides = self.strides[:]
             cumulatives = self.cumulatives[:]
 
+            failed = False
+
             for i in range(len(path) - 1):
                 projection_ind = self.system.find_projection_index(path[i], path[i+1])
-                if strides[projection_ind] is None:
+                pre_ind = self.system.find_population_index(path[i])
+                post_ind = self.system.find_population_index(path[i+1])
+
+                if self.cumulatives[post_ind] and self.cumulatives[pre_ind]:
+                    strides[projection_ind] = self.cumulatives[post_ind] / self.cumulatives[pre_ind]
+                else:
                     strides[projection_ind] = np.random.randint(min_stride, max_stride+1)
-                    pre_ind = self.system.find_population_index(path[i])
-                    post_ind = self.system.find_population_index(path[i+1])
-                    # print('pre-ind: {} proj-ind: {} {}*{}'.format(pre_ind, projection_ind, cumulatives[pre_ind], strides[projection_ind]))
                     cumulatives[post_ind] = cumulatives[pre_ind] * strides[projection_ind]
 
-            end_cumulative = cumulatives[self.system.find_population_index(path[-1])]
+                    # print('setting {} <= {} <= {} for {}'.format(self.min_cumulatives[post_ind], cumulatives[post_ind], self.max_cumulatives[post_ind], system.populations[post_ind].name))
+                    if cumulatives[post_ind] > self.max_cumulatives[post_ind] \
+                            or cumulatives[post_ind] < self.min_cumulatives[post_ind]:
+                        # print('...nope')
+                        failed = True
+                        break
 
-            if exact_cumulative is None or exact_cumulative == end_cumulative:
-                if end_cumulative <= self.max_cumulative_stride:
+            if not failed:
+                end_cumulative = cumulatives[self.system.find_population_index(path[-1])]
+                if exact_cumulative is None or exact_cumulative == end_cumulative:
                     self.strides = strides
                     self.cumulatives = cumulatives
                     done = True
@@ -192,13 +226,13 @@ if __name__ == '__main__':
     # path = longest_path(system, 'V4_5')
     # print(path)
 
-    # candidate = StridePattern(system, 32)
-    # candidate.fill()
+    candidate = StridePattern(system, 32)
+    candidate.fill()
 
     # print(candidate.strides)
     # print(candidate.cumulatives)
-    # for i in range(len(system.populations)):
-    #     print('{}: {}'.format(system.populations[i].name, candidate.cumulatives[i]))
+    for i in range(len(system.populations)):
+        print('{}: {}'.format(system.populations[i].name, candidate.cumulatives[i]))
 
     # net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
     # net.print()
@@ -208,7 +242,7 @@ if __name__ == '__main__':
     # plt.semilogy(training_curve)
     # plt.show()
 
-    calc.conversion.test_stride_patterns(system)
+    # calc.conversion.test_stride_patterns(system)
 
     # candidate.init_path(path)
     #

@@ -39,7 +39,6 @@ if __name__ == '__main__':
     # new_connections = net.connections[:6]
     # new_connections.extend(net.connections[10:17])  # 10:14 is one connection to V4_4
     # net.connections = new_connections
-    # net.print()
 
     subsample_indices = subsample_maps(net)
     subsample_indices = prune_maps(net, subsample_indices, last_conv_layer)
@@ -48,6 +47,7 @@ if __name__ == '__main__':
     # for i in range(len(subsample_indices)):
     #     print('{}->{}: {}'.format(net.connections[i].pre.name, net.connections[i].post.name, len(subsample_indices[i])))
 
+    net.print()
     # assert False
 
     input_layer = net.find_layer('INPUT')
