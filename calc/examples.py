@@ -12,83 +12,39 @@
 
 from calc.system import System
 from calc.data import get_layers, get_num_neurons, get_RF_size, synapses_per_neuron, get_areas, synapses_per_neuron, Markov, CoCoMac
+from calc.data import map_M14_to_FV91
 # from calc.data import get_sources, get_feedforward, get_connection_details
 import calc.data
 import calc.conversion
 
 
 def make_system(cortical_areas):
-    # cortical_areas = ['V1', 'V2', 'V3', 'V3A', 'V4', 'MT', 'MST', 'VIP', 'LIP', 'TEO', 'TEpd']
+    """
+    :param cortical_areas: List of names not counting 'V1', which is handled specially
+    :return: system
+    """
+    #this is parvocellular
 
     system = System()
 
-    #TODO: problem: for V1 I have to divide inputs by sublayer
-    #TODO: this is a hack
-    # return ['1', '2/3', '3B', '4A', '4B', '4Calpha', '4Cbeta', '5', '6']
-    layer_map = {
-        '1': '1',
-        '2/3': '2/3',
-        '3B': '2/3',
-        '4': '4',
-        '4A': '4',
-        '4B': '4',
-        '4Calpha': '4',
-        '4Cbeta': '4',
-        '5': '5',
-        '6': '6'
-    }
-
     system.add_input(750000, .2)
-    # system.add(system.input_name, 750000, 0, .2)
 
-    #TODO: this is parvocellular
+    area = 'V1'
+    for layer in ['2/3', '4Cbeta', '5']:
+        name = _pop_name(area, layer)
 
-    for area in cortical_areas:
-        layers = get_layers(area)
-        for layer in layers:
-            if layer != '1' and layer != '6' and layer != '4Calpha' and layer != '4A' and layer != '4B' and layer != '3B':
-                name = _pop_name(area, layer)
-                n = get_num_neurons(area, layer)
-                e = synapses_per_neuron(area, 'extrinsic', layer_map[layer])
+        n = get_num_neurons(area, layer)
+        e = synapses_per_neuron(area, 'extrinsic', '4' if layer == '4Cbeta' else layer)
+        w = get_RF_size(area) if layer == '2/3' else None
 
-                # scale different layers differently; Gilbert 1977, Fig 8 is a source
-                # but using more conservative numbers that prevent 0-width kernels
-                rf_size = get_RF_size(area)
-                if rf_size is None:
-                    w = None
-                else:
-                    if layer == '2/3' or layer.startswith('3'):
-                        w = get_RF_size(area)
-                    # elif layer.startswith('4'):
-                    #     w = 0.8*get_RF_size(area)
-                    # elif layer == '5':
-                    #     w = 1.2*get_RF_size(area)
-                    # elif layer == '6':
-                    #     w = 1.4*get_RF_size(area)
-                    else:
-                        w = None
-                system.add(name, n, e, w)
+        system.add(name, n, e, w)
 
-        _add_intrinsic_forward_connections(system, area)
-
-    system.print_description()
     system.connect_areas(system.input_name, 'V1_4Cbeta', 1.)
+    system.connect_layers(_pop_name(area, '4Cbeta'), _pop_name(area, '2/3'), synapses_per_neuron(area, '4', '2/3'))
+    system.connect_layers(_pop_name(area, '2/3'), _pop_name(area, '5'), synapses_per_neuron(area, '2/3', '5'))
 
-    m = Markov()
-    for target in cortical_areas:
-        for source in m.get_sources(target):
-            # print(source)
-            if source in cortical_areas and get_feedforward(source, target):
-                FLNe = m.get_FLNe(source, target)
-                SLN = m.get_SLN(source, target)
-                print('{}->{} FLNe: {} SLN: {}'.format(source, target, FLNe, SLN))
-                # FLN, SLF, TLF = get_connection_details(source, target)
-
-                supra_source_pop = '{}_2/3'.format(source)
-                infra_source_pop = '{}_5'.format(source)
-                target_pop = '{}_4'.format(target)
-                system.connect_areas(supra_source_pop, target_pop, FLNe*SLN/100)
-                system.connect_areas(infra_source_pop, target_pop, FLNe*(1-SLN/100))
+    add_areas(system, [area for area in cortical_areas if area != 'V1'])
+    connect_areas(system, cortical_areas)
 
     """
     FLNe works straightforwardly as long as input is to layer 4. 
@@ -98,70 +54,201 @@ def make_system(cortical_areas):
     return system
 
 
+def add_areas(system, cortical_areas):
+    for area in cortical_areas:
+        layers = get_layers(area)
+        for layer in layers:
+            if layer != '1' and layer != '6':
+                name = _pop_name(area, layer)
+
+                n = get_num_neurons(area, layer)
+                e = synapses_per_neuron(area, 'extrinsic', layer)
+                w = get_RF_size(area) if layer == '2/3' else None
+
+                system.add(name, n, e, w)
+
+        _add_intrinsic_forward_connections(system, area)
+
+
+def connect_areas(system, cortical_areas):
+    m = Markov()
+    for target in cortical_areas:
+        for source in m.get_sources_with_fallback(target):
+            # print(source)
+            if source in cortical_areas and get_feedforward(source, target):
+                FLNe = m.get_FLNe(source, target)
+                SLN = m.get_SLN(source, target)
+                # print('{}->{} FLNe: {} SLN: {}'.format(source, target, FLNe, SLN))
+                # FLN, SLF, TLF = get_connection_details(source, target)
+
+                supra_source_pop = '{}_2/3'.format(source)
+                infra_source_pop = '{}_5'.format(source)
+                target_pop = '{}_4'.format(target)
+                system.connect_areas(supra_source_pop, target_pop, FLNe*SLN/100)
+                system.connect_areas(infra_source_pop, target_pop, FLNe*(1-SLN/100))
+
+
+def connect_areas_in_streams(system, cortical_areas):
+    """
+    Dorsal / ventral aware version. Include V1 and V2 in cortical_areas, but they must be
+    connected to each other separately.
+    """
+    m = Markov()
+    for target in [a for a in cortical_areas if a not in ('V1', 'V2')]:
+        for source in m.get_sources_with_fallback(target):
+            # print(source)
+            if source in cortical_areas and get_feedforward(source, target):
+                FLNe = m.get_FLNe(source, target)
+                SLN = m.get_SLN(source, target)
+                # print('{}->{} FLNe: {} SLN: {}'.format(source, target, FLNe, SLN))
+                # FLN, SLF, TLF = get_connection_details(source, target)
+
+                target_pop = '{}_4'.format(target)
+
+                if source == 'V1':
+                    if is_ventral(target):
+                        supra_source_pop = 'V1_2/3'  # true for V4, not sure about others
+                        infra_source_pop = 'V1_5'
+                        system.connect_areas(supra_source_pop, target_pop, FLNe*SLN/100)
+                        system.connect_areas(infra_source_pop, target_pop, FLNe*(1-SLN/100))
+                    else:
+                        supra_source_pop = 'V1_4B'  # true for MT, not sure about others
+                        system.connect_areas(supra_source_pop, target_pop, FLNe*SLN/100)
+                elif source == 'V2':
+                    if is_ventral(target):
+                        supra_source_pop = 'V2thin_2/3'
+                        infra_source_pop = 'V2thin_5'
+                    else:
+                        supra_source_pop = 'V2thick_2/3'
+                        infra_source_pop = 'V2thick_5'
+                    system.connect_areas(supra_source_pop, target_pop, FLNe * SLN / 100)
+                    system.connect_areas(infra_source_pop, target_pop, FLNe * (1 - SLN / 100))
+                else:
+                    supra_source_pop = '{}_2/3'.format(source)
+                    infra_source_pop = '{}_5'.format(source)
+                    system.connect_areas(supra_source_pop, target_pop, FLNe*SLN/100)
+                    system.connect_areas(infra_source_pop, target_pop, FLNe*(1-SLN/100))
+
+
 def get_feedforward(source, target):
-    source = CoCoMac._map_M14_to_FV91(source)
-    target = CoCoMac._map_M14_to_FV91(target)
+    source = map_M14_to_FV91(source)
+    target = map_M14_to_FV91(target)
     return calc.data.FV91_hierarchy[source] < calc.data.FV91_hierarchy[target]
 
 
-def _add_early_visual_system(system):
-    #TODO: read fuzzy logic of thamamic connectivity
-    #TODO: not sure about sizes of LGN layers, numbers of magno vs parvo LGN and RGC cells
-    #TODO: not sure about in-degree of LGN cells
-    #TODO: do magno V1 cells have larger RFs than parvo?
+def is_ventral(area):
+    return area[:2] == 'V4' or area[:2] == 'TE'
 
-    # RGCs and lateral geniculate nucleus have magnocellular and parvocellular subpopulations
-    # from ipsilateral and contralateral eyes. Pixels correspond roughly to retinal ganglion cells.
-    system.add_input(500000, .02, 'Contra-Parvo-RGC') # parvo input should be 3-channel (RGB)
-    system.add_input(500000, .02, 'Ipsi-Parvo-RGC')
-    system.add_input(500000, .04, 'Contra-Magno-RGC') # magno input should be n-channel luminance video
-    system.add_input(500000, .04, 'Ipsi-Magno-RGC')
-    system.add('Contra-Parvo-LGN', 0, 0, .02) #TODO: n, e
-    system.add('Ipsi-Parvo-LGN', 0, 0, .02)
-    system.add('Contra-Magno-LGN', 0, 0, .02)
-    system.add('Ipsi-Magno-LGN', 0, 0, .02)
 
-    system.connect_layers('Contra-Parvo-RGC', 'Contra-Parvo-LGN', None)
-    system.connect_layers('Ipsi-Parvo-RGC', 'Ipsi-Parvo-LGN', None)
-    system.connect_layers('Contra-Magno-RGC', 'Contra-Magno-LGN', None)
-    system.connect_layers('Ipsi-Magno-RGC', 'Ipsi-Magno-LGN', None)
+def make_big_system():
+    # complications:
+    # - MST isn't split in Yerkes but should be according to FV91 pg 11
+    # - AIP connections studied by Borra but not in CoCoMac
+    # - CIP should maybe be split from LIP (or related to PIP?)
+    # - pulvinar connectivity
+    # - use CoCoMac sources to better estimate FLNe
+    # - how to normalize FLNe
 
-    V1_layers = ['2/3', '3B', '4A', '4B', '4Calpha', '4Cbeta', '5', '6'] # we omit the few cells with bodies in layer 1
-    layer_map = {'1': '1', '2/3': '2/3', '3B': '2/3', '4': '4', # for looking up extrinsic connections
-                 '4A': '4', '4B': '4', '4Calpha': '4', '4Cbeta': '4', '5': '5', '6': '6'}
+    # Trouble:
+    # TEad (corresponds to AITd which lacks connections)
+    # TEOm (no good correspondence)
+    # TEa/m p, TEa/m a (don't correspond well to anything)
+    # V6, V6A: should really use Shipp et al. 2001 rather than CoCoMac, but map to PO for now
 
-    for layer in V1_layers:
-        n = get_num_neurons('V1', layer)
-        e = synapses_per_neuron('V1', 'extrinsic', layer_map[layer])
-        system.add(layer, n, e, .1) #TODO: better RF sizes
+    system = System()
+    system.add_input(750000, .2)
 
-    system.add('V1_blobs', 0, 0, 0) #TODO: params (in layer 2/3)
+    # Estimates of LGN cell numbers (one side) from:
+    # Weber, Arthur J., et al. (2000) Experimental glaucoma and cell size, density, and number in the primate lateral
+    # geniculate nucleus. Investigative ophthalmology & visual science 41.6: 1370 - 1379.
+    n_LGN = 1270000
+    n_magno_LGN = .103 * n_LGN
+    n_parvo_LGN = .897 * n_LGN
 
-    #TODO: consider adding position property to population, None if to be filled in from Yerkes19
-    V2_parts = ['Thin-Stripe', 'ThickS-tripe', 'Inter-Stripe']
-    V2_layers = ['2/3', '4', '5', '6']
-    for part in V2_parts:
-        for layer in V2_layers:
-            name = '{}-{}'.format(part, layer)
-            n = None #TODO
-            e = None
+    # Guessing convergence from RGC to LGN based on comments page 54 of:
+    # Lee, B.B., Virsu, V., & Creutzfeldt, O.D.(1983).Linear signal transmission from prepotentials to cells in the
+    # macaqie lateral geniculate nucleus. Experimental Brain Research, 52(1), 50 - 56.
+    convergence_LGN = 5
+
+    # See also re. parallel projections from retina to LGN:
+    # Leventhal, A.G., Rodieck, R.W., & Dreher, B.(1981).Retinal ganglion cell classes in the Old World
+    # monkey: morphology and central projections. Science, 213(4512), 1139 - 1142.
+
+    # Magno cells have slightly larger RFs than parvo:
+    # Derrington, A.M., & Lennie, P.(1984).Spatial and temporal contrast sensitivities of neurones in lateral
+    # geniculate nucleus of macaque.The Journal of Physiology, 357(1), 219 - 240.
+
+    # Pixels correspond roughly to retinal ganglion cells
+    system.add('parvo_LGN', n_parvo_LGN, 5, .2)
+    system.add('magno_LGN', n_magno_LGN, 5, .3)
+    system.connect_areas(system.input_name, 'parvo_LGN', 1.)
+    system.connect_areas(system.input_name, 'magno_LGN', 1.)
+
+    for layer in ['4Calpha', '4Cbeta', '4B', '2/3', '5']:
+        n = get_num_neurons('V1', layer)  # TODO
+        e = synapses_per_neuron('V1', 'extrinsic', '4' if layer[0] == '4' else layer)  # TODO
+        if layer == '2/3':
+            w = get_RF_size('V1')
+        elif layer == '4B':
+            w = 1.1 * get_RF_size('V1')  # TODO: get better estimate from Gilbert
+        else:
             w = None
+        system.add('V1_{}'.format(layer), n, e, w)
+
+    system.connect_areas('parvo_LGN', 'V1_4Cbeta', 1.)
+    system.connect_areas('magno_LGN', 'V1_4Calpha', 1.)
+    system.connect_layers('V1_4Calpha', 'V1_4B', synapses_per_neuron('V1', '4', '2/3'))
+    system.connect_layers('V1_4Cbeta', 'V1_2/3', synapses_per_neuron('V1', '4', '2/3'))
+    system.connect_layers('V1_2/3', 'V1_5', synapses_per_neuron('V1', '2/3', '5'))
+
+    for area in ['V2thick', 'V2thin']:
+        for layer in ['2/3', '4', '5']:
+            name = _pop_name(area, layer)
+
+            n = get_num_neurons('V2', layer) / 2  # dividing V2 equally into thick and thin+inter stripes
+            e = synapses_per_neuron('V2', 'extrinsic', layer) #TODO: bug?
+            w = get_RF_size('V2') if layer == '2/3' else None
+
             system.add(name, n, e, w)
 
+        _add_intrinsic_forward_connections(system, area)
 
+    # There is substantial forward projection from V1_5 to V2 and V3, also from V2_5 to V3. We assume V1_5 is
+    # parvo, and V2_5 is separated into stripes. Will omit parvo, V1_5, and V2thin_5 projections to dorsal areas,
+    # consistent with MT supression following magno inactivation, reported in:
+    # Maunsell, J. H., Nealey, T. A., & DePriest, D. D. (1990). Magnocellular and parvocellular contributions to
+    # responses in the middle temporal visual area (MT) of the macaque monkey. Journal of Neuroscience, 10(10), 3323-3334.
+    m = Markov()
+    FLNe = m.get_FLNe('V1', 'V2')
+    SLN = m.get_SLN('V1', 'V2')
+    system.connect_areas('V1_2/3', 'V2thin_4', FLNe * SLN / 100)
+    system.connect_areas('V1_5', 'V2thin_4', FLNe * (1 - SLN / 100))
+    system.connect_areas('V1_4B', 'V2thick_4', FLNe * SLN / 100)
 
+    # Dorsal areas get connections from V1_4B and V2thick; ventral from V1_2/3, V1_5, and V2_thin
+    # References on segregation in V2:
+    # Shipp, S., & Zeki, S. (1985). Segregation of pathways leading from area V2 to areas V4 and V5 of
+    # macaque monkey visual cortex. Nature, 315(6017), 322.
+    # DeYoe, E. A., & Van Essen, D. C. (1985). Segregation of efferent connections and receptive field
+    # properties in visual area V2 of the macaque. Nature, 317(6032), 58.
+    # Sincich, L. C., & Horton, J. C. (2002). Divided by cytochrome oxidase: a map of the projections
+    # from V1 to V2 in macaques. Science, 295(5560), 1734-1737.
+    # DeYoe, E. A., & Van Essen, D. C. (1988). Concurrent processing streams in monkey visual cortex.
+    # Trends in neurosciences, 11(5), 219-226.
 
-    #TODO: MT should get input from V2 thick stripes and V1 4B
-    #TODO: V4 should get input from thin and interstripes and V1 2/3 blobs and interblobs
-    #TODO: probably some crosstalk too
+    cortical_areas = ['V1', 'V2', 'V3', 'V3A', 'V4', 'V4t', 'MT', 'V6', 'DP',
+                      'MST', 'FST', '7A', '7B', 'VIP', 'PIP', 'TEO', 'TEpd', 'TEpv', 'TEav']
+    add_areas(system, [a for a in cortical_areas if a not in ('V1', 'V2')])
+    connect_areas_in_streams(system, cortical_areas)
 
-
-
-
+    system.prune_FLNe()
+    system.check_connected()
+    system.print_description()
 
 
 def _pop_name(area, layer):
     return '{}_{}'.format(area, layer)
+
 
 def _add_intrinsic_forward_connections(system, area):
     if area == 'V1':
@@ -179,14 +266,14 @@ def _add_intrinsic_forward_connections(system, area):
         # system.connect_layers(_pop_name(area, '5'), _pop_name(area, '6'), synapses_per_neuron(area, '5', '6'))
 
 
-if __name__ == '__main__':
+def make_small_system(miniaturize=False):
     cortical_areas = ['V1', 'V2', 'V4', 'TEO', 'TEpd']
     # cortical_areas = ['V1', 'V2', 'V3', 'V3A', 'V4', 'MT', 'MST', 'VIP', 'LIP', 'TEO', 'TEpd']
     # cortical_areas = ['V1', 'V2', 'V4', 'TEO', 'TEpd']
+
     system = make_system(cortical_areas)
     system.prune_FLNe()
     system.check_connected()
-
 
     # graph = system.make_graph()
     # import networkx as nx
@@ -195,16 +282,16 @@ if __name__ == '__main__':
     # nx.draw_networkx(graph, pos=get_layout(system), arrows=True, font_size=10, node_size=1200, node_color='white')
     # plt.show()
 
-    # for population in system.populations:
-    #     if population.name != system.input_name:
-    #         population.n = population.n / 10
+    if miniaturize:
+        for population in system.populations:
+            if population.name != system.input_name:
+                population.n = population.n / 20
 
     calc.conversion.test_stride_patterns(system)
 
-    # from calc.system import get_example_small
-    # from calc.conversion import make_net_from_system
-    # system = get_example_small()
-    # net = make_net_from_system(system)
-    # net.make_graph(input_layer, [])
+
+if __name__ == '__main__':
+    # make_small_system(miniaturize=True)
+    make_big_system()
 
 
