@@ -687,6 +687,48 @@ def _get_triangle_area(a, b, c):
 yerkes19 = Yerkes19()
 
 
+M14_FV91 = {
+    # TEO is roughly PITd and PITv (Zeki, 1996), and it looks like Markov TEO injection may be in PITd.
+    # On the other hand TEOm position relative to TEO is similar to PITd relative to PITv. To be conservative,
+    # we'll map TEO to PITd and consider TEOm to lack a corresponding area.
+    'TEO': 'PITd',
+    'TEpd': 'CITd',
+    'TEpv': 'CITv',
+    'TEad': 'AITd',
+    'TEav': 'AITv',
+    'MST': 'MSTd',  # no injection into MST, FLNe is sum across MSTl, MSTd
+    '7A': '7a',
+    '7B': '7b',
+    'V6': 'PO',  # this isn't a great correspondence; see Shipp et al. 2001
+}
+
+
+def map_M14_to_FV91(area):
+    """
+    :param area: Area name from Markov et al. parcellation
+    :return: Name of most similar area from CoCoMac
+    """
+
+    if area in M14_FV91.keys():
+        area = M14_FV91[area]
+
+    return area
+
+
+def map_FV91_to_M14(area):
+    """
+    :param area: Area name from CoCoMac
+    :return: Name of most similar area from Markov et al.
+    """
+
+    FV91_M14 = dict((M14_FV91[key], key) for key in M14_FV91)
+
+    if area in FV91_M14.keys():
+        area = FV91_M14[area]
+
+    return area
+
+
 class CoCoMac:
     """
     Inter-area connectivity data from the CoCoMac database,
@@ -696,34 +738,11 @@ class CoCoMac:
     available.
     """
     def __init__(self):
-        file_name = 'data_files/cocomac/connectivity_matrix.json'
-        print(file_name)
-        with open(file_name) as file:
-            self.data = json.load(file)
+        with open('data_files/cocomac/connectivity_matrix_layers.json') as file:
+            self.layers = json.load(file)
 
-    @staticmethod
-    def _map_M14_to_FV91(area):
-        """
-        :param area: Area name from Markov et al. parcellation
-        :return: Name of most similar area from CoCoMac
-        """
-        #TODO: choosing some of these at random to get code working; go back and compare Markov
-        #   with CoCoMac connection patterns if Markov injection site unclear
-        #TODO: this method doesn't have to be on this class
-
-        map = {
-            'TEO': 'PITd', #could be PITv
-            'TEpd': 'CITd',
-            'TEpv': 'CITv',
-            'TEad': 'AITd',
-            'TEav': 'AITv',
-            'MST': 'MSTd' #could be MSTl
-        }
-
-        if area in map.keys():
-            area = map[area]
-
-        return area
+        with open('data_files/cocomac/connectivity_matrix_densities.json') as file:
+            self.densities = json.load(file)
 
     @staticmethod
     def _guess_missing_layers(source_area, target_area, layers):
@@ -798,6 +817,22 @@ class CoCoMac:
 
         return sorted(list(set(result)))
 
+    def get_source_areas(self, target_area):
+        # http://cocomac.g-node.org/services/connectivity_matrix.php?dbdate=20141022&AP=AxonalProjections_FV91&square=1&merge=max&format=json&cite=1
+
+        source_areas = []
+        for key in self.densities.keys():
+            targets = self.densities[key]
+            # print(targets)
+            target_name = 'FV91-{}'.format(target_area)
+            if target_name in targets and targets[target_name] != 0:
+                source_area = key[5:]
+                # print('adding {} density {}'.format(source_area, targets[target_name]))
+                source_areas.append(source_area)
+
+        return source_areas
+
+
     def get_connection_details(self, source_area, target_area):
         """
         :param source_area: cortical area from which connection originates
@@ -814,7 +849,7 @@ class CoCoMac:
         source_area = CoCoMac._map_M14_to_FV91(source_area)
         target_area = CoCoMac._map_M14_to_FV91(target_area)
 
-        layers = self.data['FV91-{}'.format(source_area)]['FV91-{}'.format(target_area)]
+        layers = self.layers['FV91-{}'.format(source_area)]['FV91-{}'.format(target_area)]
 
         if layers[0] is None and layers[1] is None:
             return None
@@ -893,6 +928,17 @@ class Markov:
         [self.source_FLN, self.target_FLN, self.fraction_FLN] = _read_fraction_labelled_neurons_extrinsic()
         [self.source_SLN, self.target_SLN, self.percent_SLN] = _read_supragranular_layers_percent()
 
+    def is_injection_site(self, target):
+        return target in self.target_FLN
+
+    def get_sources_with_fallback(self, target):
+        if self.is_injection_site(target):
+            return self.get_sources(target)
+        else:
+            c = CoCoMac()
+            sources = c.get_source_areas(map_M14_to_FV91(target))
+            return [map_FV91_to_M14(source) for source in sources if source in yerkes19.areas]
+
     def get_sources(self, target):
         result = []
         for i in range(len(self.source_FLN)):
@@ -905,14 +951,28 @@ class Markov:
         for i in range(len(self.source_FLN)):
             if self.source_FLN[i] == source and self.target_FLN[i] == target:
                 result.append(self.fraction_FLN[i])
-        return np.mean(result)
+
+        if result:
+            return np.mean(result)
+        else:
+            # calculate estimate from regression with inter-area distance
+            # y = Yerkes19()
+            source_centre = yerkes19.get_centre(source)
+            target_centre = yerkes19.get_centre(target)
+            distance = np.linalg.norm(source_centre - target_centre)
+            log_FLNe = - 4.38850006 - 0.11039442*distance
+            return np.exp(log_FLNe)
 
     def get_SLN(self, source, target):
         result = []
         for i in range(len(self.source_SLN)):
             if self.source_SLN[i] == source and self.target_SLN[i] == target:
                 result.append(self.percent_SLN[i])
-        return np.mean(result)
+
+        if result:
+            return np.mean(result)
+        else:
+            return 65.42  # mean for ascending connections
 
 
 def _read_fraction_labelled_neurons_extrinsic():
@@ -1140,6 +1200,8 @@ def calculate_mean_ascending_SLN():
     Calculates mean %SLN for connections that ascend the FV91 hierarchy.
     This mean can be used as a fallback for connections not characterized
     by Markov et al.
+
+    The result is 65.42%
     """
 
     sources, targets, percents = _read_supragranular_layers_percent()
@@ -1149,8 +1211,8 @@ def calculate_mean_ascending_SLN():
 
     for i in range(len(sources)):
         if sources[i] in y.areas and targets[i] in y.areas:
-            s = CoCoMac._map_M14_to_FV91(sources[i])
-            t = CoCoMac._map_M14_to_FV91(targets[i])
+            s = map_M14_to_FV91(sources[i])
+            t = map_M14_to_FV91(targets[i])
             if s in FV91_hierarchy and t in FV91_hierarchy and FV91_hierarchy[t] > FV91_hierarchy[s]:
                 source_centre = y.get_centre(sources[i])
                 target_centre = y.get_centre(targets[i])
@@ -1167,6 +1229,10 @@ def calculate_mean_ascending_SLN():
     plt.show()
 
 def calculate_flne_vs_distance():
+    """
+    Result:
+    Correlation between distance and log(FLNe): -0.4464287686487642. Regression slope: -0.11039442; bias: -4.38850006
+    """
     import pickle
 
     # sources, targets, fractions = _read_fraction_labelled_neurons_extrinsic()
@@ -1202,7 +1268,7 @@ def calculate_flne_vs_distance():
     x, res, rank, s = np.linalg.lstsq(a, np.log(f))
     approx = np.matmul(a, x)
 
-    print('Correlation between distance and log(FLNe): {}. Regression coefficients: {}'.format(r[0, 1], x))
+    print('Correlation between distance and log(FLNe): {}. Regression coefficients (slope; bias): {}'.format(r[0, 1], x))
 
     plt.plot(d, np.log(f), '.')
     plt.plot(d, approx, 'k.')
@@ -1339,3 +1405,13 @@ if __name__ == '__main__':
 
     calculate_flne_vs_distance()
 
+    # m = Markov()
+    # target = 'V3'
+    # print(m.is_injection_site(target))
+    # print(m.get_sources(target))
+    # sources = m.get_sources_with_fallback(target)
+    # print(sources)
+    # for source in sources:
+    #     FLNe = m.get_FLNe(source, target)
+    #     SLN = m.get_SLN(source, target)
+    #     print('{}->{} FLNe: {} %SLN: {}'.format(source, target, FLNe, SLN))
