@@ -25,6 +25,7 @@ class Population:
         """
         return not self.e
 
+
 #TODO: do I really need subclasses or can I have f and b, possibly None, f ignored if b not None?
 class Projection:
     def __init__(self, origin, termination):
@@ -51,7 +52,7 @@ class InterAreaProjection(Projection):
         self.f = f
 
     def get_description(self):
-        return '{} (FLNe={})'.format(Projection.get_description(), self.f)
+        return '{} (FLNe={})'.format(super().get_description(), self.f)
 
 
 class InterLaminarProjection(Projection):

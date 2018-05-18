@@ -102,6 +102,7 @@ class L1Control(Regularizer):
 
         u = - self.pid_gains[0]*error - self.pid_gains[1]*self.error_integral - self.pid_gains[2]*error_derivative
         new_l1 = 10**(-u-5) - 10**(u-5)
+        new_l1 = np.clip(new_l1, -.2, .2)
         if new_l1 < 0:
             new_l1 = new_l1 / 10000
 
