@@ -80,15 +80,19 @@ class L1Control(Regularizer):
         l1: Float; L1 regularization factor.
     """
 
-    def __init__(self, l1=0.0, pid_gains=[5, .5, 0]):
+    def __init__(self, l1=0.0, pid_gains=[5, .5, 0], target=None):
         self.l1 = K.variable(K.cast_to_floatx(l1))
         self.pid_gains = pid_gains
+        self.target = target
 
         self.error_integral = 0
         self.last_error = None
 
-    def control(self, layer, target, threshold=1e-4):
+    def control(self, layer, target=None, threshold=1e-4):
         y = self._get_sparse_fraction(layer, threshold=threshold)
+
+        if target is None:
+            target = self.target
 
         error = y - target
         if self.last_error is not None:
@@ -97,8 +101,8 @@ class L1Control(Regularizer):
             error_derivative = 0
 
         u = - self.pid_gains[0]*error - self.pid_gains[1]*self.error_integral - self.pid_gains[2]*error_derivative
-        # new_l1 = 10**(-u-5) - 10**(u-5)
         new_l1 = 10**(-u-6) - 10**(u-6)
+        new_l1 = np.clip(new_l1, -.2, .2)
         if new_l1 < 0:
             new_l1 = new_l1 / 100000
 
@@ -337,97 +341,97 @@ def sparsity_dynamics_step(model, x_train, y_train, l1=.01, threshold=1e-4, epoc
     return fractions
 
 
+if __name__ == '__main__':
+    batch_size = 32
+    num_classes = 10
+    epochs = 100
+    num_predictions = 20
+    save_dir = os.path.join(os.getcwd(), 'saved_models')
+    model_name = 'keras_cifar10_trained_model.h5'
 
-batch_size = 32
-num_classes = 10
-epochs = 100
-num_predictions = 20
-save_dir = os.path.join(os.getcwd(), 'saved_models')
-model_name = 'keras_cifar10_trained_model.h5'
+    # The data, split between train and test sets:
+    (x_train, y_train), (x_test, y_test) = cifar10.load_data()
+    print(x_train.shape[0], 'train samples')
+    print(x_test.shape[0], 'test samples')
 
-# The data, split between train and test sets:
-(x_train, y_train), (x_test, y_test) = cifar10.load_data()
-print(x_train.shape[0], 'train samples')
-print(x_test.shape[0], 'test samples')
+    # Convert class vectors to binary class matrices.
+    y_train = keras.utils.to_categorical(y_train, num_classes)
+    y_test = keras.utils.to_categorical(y_test, num_classes)
 
-# Convert class vectors to binary class matrices.
-y_train = keras.utils.to_categorical(y_train, num_classes)
-y_test = keras.utils.to_categorical(y_test, num_classes)
+    model = get_model()
 
-model = get_model()
+    x_train = x_train.astype('float32')
+    x_test = x_test.astype('float32')
+    x_train /= 255
+    x_test /= 255
 
-x_train = x_train.astype('float32')
-x_test = x_test.astype('float32')
-x_train /= 255
-x_test /= 255
+    datagen = ImageDataGenerator(
+        featurewise_center=False,  # set input mean to 0 over the dataset
+        samplewise_center=False,  # set each sample mean to 0
+        featurewise_std_normalization=False,  # divide inputs by std of the dataset
+        samplewise_std_normalization=False,  # divide each input by its std
+        zca_whitening=False,  # apply ZCA whitening
+        rotation_range=0,  # randomly rotate images in the range (degrees, 0 to 180)
+        width_shift_range=0.1,  # randomly shift images horizontally (fraction of total width)
+        height_shift_range=0.1,  # randomly shift images vertically (fraction of total height)
+        horizontal_flip=True,  # randomly flip images
+        vertical_flip=False)  # randomly flip images
 
-datagen = ImageDataGenerator(
-    featurewise_center=False,  # set input mean to 0 over the dataset
-    samplewise_center=False,  # set each sample mean to 0
-    featurewise_std_normalization=False,  # divide inputs by std of the dataset
-    samplewise_std_normalization=False,  # divide each input by its std
-    zca_whitening=False,  # apply ZCA whitening
-    rotation_range=0,  # randomly rotate images in the range (degrees, 0 to 180)
-    width_shift_range=0.1,  # randomly shift images horizontally (fraction of total width)
-    height_shift_range=0.1,  # randomly shift images vertically (fraction of total height)
-    horizontal_flip=True,  # randomly flip images
-    vertical_flip=False)  # randomly flip images
+    datagen.fit(x_train)
 
-datagen.fit(x_train)
-
-checkpoint_callback = keras.callbacks.ModelCheckpoint('weights.{epoch:02d}-{val_loss:.2f}.hdf5', monitor='val_loss', verbose=0, save_best_only=False,
-                                                      save_weights_only=False, mode='auto', period=1)
-early_stopping_callback = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=5, verbose=0,
-                                                        mode='auto')
+    checkpoint_callback = keras.callbacks.ModelCheckpoint('weights.{epoch:02d}-{val_loss:.2f}.hdf5', monitor='val_loss', verbose=0, save_best_only=False,
+                                                          save_weights_only=False, mode='auto', period=1)
+    early_stopping_callback = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0, patience=5, verbose=0,
+                                                            mode='auto')
 
 
-fractions, l1s = control_experiment(model, x_train, y_train)
-print(fractions)
-print(l1s)
+    fractions, l1s = control_experiment(model, x_train, y_train)
+    print(fractions)
+    print(l1s)
 
-# fractions = sparsity_dynamics_experiment(model, x_train, y_train)
-# fractions, scores = sparsity_rebound_experiment(model, x_train, y_train, x_test, y_test)
+    # fractions = sparsity_dynamics_experiment(model, x_train, y_train)
+    # fractions, scores = sparsity_rebound_experiment(model, x_train, y_train, x_test, y_test)
 
-# fractions, scores = sparsity_nonlinearity_experiment(x_train, y_train, x_test, y_test)
-# print(fractions)
-# print(scores)
+    # fractions, scores = sparsity_nonlinearity_experiment(x_train, y_train, x_test, y_test)
+    # print(fractions)
+    # print(scores)
 
-# x = np.linspace(-.1, .1, 100)
-# y = []
-# for i in range(len(x)):
-#     print(i)
-#     xi = K.variable(x[i])
-#     y.append(model.layers[0].kernel_regularizer(xi).eval(session=K.get_session()))
-#
-# import matplotlib.pyplot as plt
-# plt.plot(x, y)
-# plt.show()
+    # x = np.linspace(-.1, .1, 100)
+    # y = []
+    # for i in range(len(x)):
+    #     print(i)
+    #     xi = K.variable(x[i])
+    #     y.append(model.layers[0].kernel_regularizer(xi).eval(session=K.get_session()))
+    #
+    # import matplotlib.pyplot as plt
+    # plt.plot(x, y)
+    # plt.show()
 
-# # model.layers[0].kernel_regularizer.adjust(model.layers[0], target=.1, threshold=1e-4)
-# model.layers[0].kernel_regularizer.update(new_l1=0.0)
-# print(model.layers[0].kernel_regularizer.get_config())
-# for i in range(epochs):
-#     n = batch_size * 200
-#     print(x_train.shape)
-#     print(y_train.shape)
-#     model.fit_generator(datagen.flow(x_train[:n,:,:,:], y_train[:n,:],
-#                                      batch_size=batch_size),
-#                         epochs=1,
-#                         validation_data=(x_test, y_test),
-#                         workers=4,
-#                         callbacks=[checkpoint_callback, early_stopping_callback])
-#     # show_weights(model)
-#     print(model.layers[0].kernel_regularizer._get_sparse_fraction(model.layers[0]))
-#     model.layers[0].kernel_regularizer.update(new_l1=0.01)
-#
-# # Save model and weights
-# if not os.path.isdir(save_dir):
-#     os.makedirs(save_dir)
-# model_path = os.path.join(save_dir, model_name)
-# model.save(model_path)
-# print('Saved trained model at %s ' % model_path)
-#
-# # Score trained model.
-# scores = model.evaluate(x_test, y_test, verbose=1)
-# print('Test loss:', scores[0])
-# print('Test accuracy:', scores[1])
+    # # model.layers[0].kernel_regularizer.adjust(model.layers[0], target=.1, threshold=1e-4)
+    # model.layers[0].kernel_regularizer.update(new_l1=0.0)
+    # print(model.layers[0].kernel_regularizer.get_config())
+    # for i in range(epochs):
+    #     n = batch_size * 200
+    #     print(x_train.shape)
+    #     print(y_train.shape)
+    #     model.fit_generator(datagen.flow(x_train[:n,:,:,:], y_train[:n,:],
+    #                                      batch_size=batch_size),
+    #                         epochs=1,
+    #                         validation_data=(x_test, y_test),
+    #                         workers=4,
+    #                         callbacks=[checkpoint_callback, early_stopping_callback])
+    #     # show_weights(model)
+    #     print(model.layers[0].kernel_regularizer._get_sparse_fraction(model.layers[0]))
+    #     model.layers[0].kernel_regularizer.update(new_l1=0.01)
+    #
+    # # Save model and weights
+    # if not os.path.isdir(save_dir):
+    #     os.makedirs(save_dir)
+    # model_path = os.path.join(save_dir, model_name)
+    # model.save(model_path)
+    # print('Saved trained model at %s ' % model_path)
+    #
+    # # Score trained model.
+    # scores = model.evaluate(x_test, y_test, verbose=1)
+    # print('Test loss:', scores[0])
+    # print('Test accuracy:', scores[1])

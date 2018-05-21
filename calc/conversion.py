@@ -22,7 +22,12 @@ class SystemConstants:
 
         for population in system.populations:
             self.n.append(tf.constant(float(population.n), name='n_in_{}'.format(population.name)))
-            self.w.append(tf.constant(float(population.w), name='w_of_{}'.format(population.name)))
+
+            if population.w:
+                self.w.append(tf.constant(float(population.w), name='w_of_{}'.format(population.name)))
+            else:
+                self.w.append(None)
+
             if population.name == system.input_name:
                 self.e.append(None)
             else:
@@ -109,20 +114,41 @@ class NetworkVariables:
             self.input_layers.append(input_layers)
             self.input_connections.append(input_connections)
 
-        # TODO: should initialize unknowns as falling between surrounding values
-        # set RF width as in system if defined; otherwise randomize
-        for population in system.populations:
-            w_rf = 2. + 5.*np.random.rand() if population.w is None else population.w
+        def get_min_downstream_w_rf(w_rf, width):
+            sigma = w_rf / image_pixel_width * width / network.layers[image_layer].width
+            sigma_downstream = np.sqrt(sigma**2 + 1/12)
+            return w_rf * sigma_downstream / sigma
 
-            # self.w_rf.append(tf.constant(w_rf, dtype=tf.float32))
-            self.w_rf.append(get_variable('{}-w_rf_s'.format(population.name), w_rf))
+        # initialize unknown RF sizes as small as possible
+        w_rf_init = [pop.w for pop in system.populations]
+        done = False
+        while not done:
+            done = True
+            for i in range(len(w_rf_init)):
+                if w_rf_init[i] is None:
+                    min_downstream_rfs = []
+                    for input_layer in self.input_layers[i]:
+                        w_rf_input = w_rf_init[input_layer]
+                        width_input = network.layers[input_layer].width
+                        if w_rf_input is None:
+                            break
+                        else:
+                            min_downstream_rfs.append(get_min_downstream_w_rf(w_rf_input, width_input))
+                    if len(min_downstream_rfs) == len(self.input_layers[i]):
+                        w_rf_init[i] = np.max(min_downstream_rfs)
+                    else:
+                        done = False
 
-            # scale = w_rf
-            # scale_constant = tf.constant(scale, dtype=tf.float32)
+        for i in range(len(w_rf_init)):
+            self.w_rf.append(get_variable('{}-w_rf_s'.format(network.layers[i].name), w_rf_init[i]))
 
-            # w_rf_scaled = get_variable('{}-w_rf_s'.format(population.name), 1.)
-            # self.w_rf_scaled.append(w_rf_scaled)
-            # self.w_rf.append(scale_constant * w_rf_scaled)
+        # set RF width as in system if defined; otherwise set to None
+        # for population in system.populations:
+        #     if population.w is not None:
+        #         # w_rf = 2. + 5.*np.random.rand() if population.w is None else population.w
+        #         self.w_rf.append(get_variable('{}-w_rf_s'.format(population.name), population.w))
+        #     else:
+        #         self.w_rf.append(None) #TODO: can't do this
 
         # replace image-channels variable with constant (it shouldn't change) ...
         # self.m[image_layer] = tf.constant(float(network.layers[image_layer].m))
@@ -143,13 +169,17 @@ class NetworkVariables:
             # stride_name = '{}_{}_stride'.format(connection.pre.name, connection.post.name)
             # self.s.append(tf.divide(self.width[pre_ind], self.width[post_ind], name=stride_name)) # width j over width i
 
+            # if self.w_rf[pre_ind] is None or self.w_rf[post_ind] is None:
+            #     self.w.append(get_variable('{}-w'.format(conn_name), connection.w))
+            # else:
             pre_pixel_width = image_pixel_width * self.width[image_layer] / self.width[pre_ind]
-            # convert RF sizes from degrees visual angle to pre-layer pixels ...
+            # convert RF sizes from degrees visual angle to *pre-layer* pixels (units of the kernel)...
             #TODO: deal with equal RF sizes
             sigma_post = tf.divide(self.w_rf[post_ind], pre_pixel_width)
             sigma_pre = tf.divide(self.w_rf[pre_ind], pre_pixel_width)
             sigma_kernel = tf.sqrt(sigma_post**2 - sigma_pre**2)
             w = tf.constant(12**.5) * sigma_kernel
+            # w = get_variable('{}-w'.format(conn_name), tf.constant(12**.5) * sigma_kernel)
             self.w.append(w)
 
             self.pres.append(pre_ind)
@@ -258,9 +288,10 @@ class Cost:
         """
         terms = []
         for i in range(len(self.system.w)):
-            w_rf_system = self.system.w[i]
-            w_rf_network = self.network.w_rf[i]
-            terms.append(norm_squared_error(w_rf_system, w_rf_network))
+            if self.system.w[i] is not None:  # omit from cost if target is None
+                w_rf_system = self.system.w[i]
+                w_rf_network = self.network.w_rf[i]
+                terms.append(norm_squared_error(w_rf_system, w_rf_network))
 
         return tf.multiply(tf.constant(kappa), tf.reduce_mean(terms))
 
@@ -367,7 +398,7 @@ class Cost:
             m_i = self.network.m[self.network.posts[i]]
             m_j = self.network.m[self.network.pres[i]]
             terms.append(tf.square(w_ij) * m_i * m_j)
-        return tf.constant(kappa) * tf.reduce_sum(terms)
+        return tf.constant(kappa) * tf.reduce_mean(terms)
 
     def constraint_cost(self, kappa):
         """
@@ -400,7 +431,10 @@ class Cost:
             pop = system.populations[i]
             n = round(sess.run(self._get_n_network(i)))
             e = sess.run(self._get_e_network(i))
-            w = sess.run(self.network.w_rf[i])
+            if self.network.w_rf[i] is None:
+                w = -1
+            else:
+                w = sess.run(self.network.w_rf[i])
             # print('{} n:[{}|{}] e:[{}|{:10.6f}] w:[{}|{:10.6f}]'.format(pop.name, pop.n, n, pop.e, e, pop.w, w))
             print('{}, {}, {}, {:10.6f}, {}, {:10.6f};'.format(pop.n, n, pop.e, e, pop.w, w))
 
@@ -565,34 +599,31 @@ def test_stride_pattern(system):
     candidate.fill()
     net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
 
-    # net.print()
-    # print(candidate.cumulatives)
-    # print(candidate.strides)
-
     optimizer = tf.train.AdamOptimizer()
     cost = Cost(system, net)
 
     # RF widths are very well initialized, so we don't have to do anything further with them
+    # - trying less initialization
     c = cost.match_cost_f(1.) \
         + cost.match_cost_b(1.) \
         + cost.match_cost_e(1.) \
+        + cost.match_cost_w(1.) \
+        + cost.param_cost(1e-11) \
         + cost.sparsity_constraint_cost(1.)
 
     pc = cost.param_cost(1.)
     wc = cost.match_cost_w(1.)
 
-    # vars = cost.network.collect_variables()
     vars = []
     vars.extend(cost.network.c)
     vars.extend(cost.network.sigma)
+    for w_rf in cost.network.w_rf:
+        if isinstance(w_rf, tf.Variable):
+            vars.append(w_rf)
 
     clip_ops = []
     clip_ops.extend(get_clip_ops(cost.network.c))
     clip_ops.extend(get_clip_ops(cost.network.sigma))
-
-    # c = cost.match_cost_w(1.) + cost.constraint_cost(1.)
-    # vars = cost.network.w_rf
-    # clip_ops = []
 
     opt_op = optimizer.minimize(c, var_list=vars)
 
@@ -601,6 +632,7 @@ def test_stride_pattern(system):
         sess.run(init)
         update_net_from_tf(sess, net, cost.network)
         net.print()
+        print('******************')
 
         training_curve = []
         training_curve.append((0, sess.run(c), sess.run(pc), sess.run(wc)))
@@ -609,7 +641,7 @@ def test_stride_pattern(system):
         print('cost: {} param-cost: {} RF-cost: {}'.format(sess.run(c), sess.run(pc), sess.run(wc)))
 
         iterations = 100
-        for i in range(31):
+        for i in range(201):
             optimize_net(sess, opt_op, iterations=iterations, clip_ops=clip_ops)
             cost_i = sess.run(c)
             cost_p_i = sess.run(pc)
@@ -619,7 +651,8 @@ def test_stride_pattern(system):
             # _print_cost(sess, cost)
 
         update_net_from_tf(sess, net, cost.network)
-        # net.print()
+        net.print()
+        print('******************')
         cost.compare_system(system, sess)
 
     return net, training_curve
