@@ -101,10 +101,10 @@ class L1Control(Regularizer):
             error_derivative = 0
 
         u = - self.pid_gains[0]*error - self.pid_gains[1]*self.error_integral - self.pid_gains[2]*error_derivative
-        new_l1 = 10**(-u-5) - 10**(u-5)
+        new_l1 = 10**(-u-6) - 10**(u-6)
         new_l1 = np.clip(new_l1, -.2, .2)
         if new_l1 < 0:
-            new_l1 = new_l1 / 10000
+            new_l1 = new_l1 / 100000
 
         print('control error: {} integral: {} derivative: {} u: {} l1: {}'.format(error, self.error_integral, error_derivative, u, new_l1))
         self.update(new_l1=new_l1)
@@ -189,8 +189,14 @@ def control_experiment(model, x_train, y_train):
     fractions = []
     l1s = []
 
-    for i in range(200):
+    for i in range(100):
         f, l1 = sparsity_control_step(model, x_train, y_train, target=.5, epochs=.14)
+
+        fractions.extend(f)
+        l1s.append(l1)
+
+    for i in range(100):
+        f, l1 = sparsity_control_step(model, x_train, y_train, target=.8, epochs=.14)
 
         fractions.extend(f)
         l1s.append(l1)
