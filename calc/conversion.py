@@ -88,19 +88,6 @@ class NetworkVariables:
         self.posts = [] # for each connection, index of postsynaptic layer
 
         for layer in network.layers:
-            # rescale large variables for optimization
-            # scale = (layer.m + layer.width) / 2.
-            # scale_constant = tf.constant(scale, dtype=tf.float32)
-
-            # m_scaled = get_variable('{}-m_s'.format(layer.name), layer.m/scale)
-            # self.m_scaled.append(m_scaled)
-
-            # width_scaled = get_variable('{}-width_s'.format(layer.name), layer.width/scale)
-            # self.width_scaled.append(width_scaled)
-
-            # self.m.append(scale_constant * m_scaled)
-            # self.width.append(scale_constant * width_scaled)
-
             self.m.append(tf.constant(layer.m, dtype=tf.float32))
             self.width.append(tf.constant(layer.width, dtype=tf.float32))
 
@@ -496,7 +483,7 @@ def make_net_from_system(system, image_layer=0, image_channels=3.):
         else:
             ratio_channels_over_pixels = np.exp(-1.5 + 3*np.random.rand())
             pixels = round(np.cbrt(units / ratio_channels_over_pixels))
-            channels = round(ratio_channels_over_pixels * pixels)
+            channels = max(1, round(ratio_channels_over_pixels * pixels))
         net.add(pop.name, channels, pixels)
 
     # try to set strides to reasonable values
@@ -600,10 +587,12 @@ def test_stride_pattern(system):
     net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
 
     optimizer = tf.train.AdamOptimizer()
+    print('Setting up cost structure')
     cost = Cost(system, net)
 
     # RF widths are very well initialized, so we don't have to do anything further with them
     # - trying less initialization
+    print('Defining cost function')
     c = cost.match_cost_f(1.) \
         + cost.match_cost_b(1.) \
         + cost.match_cost_e(1.) \
@@ -625,11 +614,14 @@ def test_stride_pattern(system):
     clip_ops.extend(get_clip_ops(cost.network.c))
     clip_ops.extend(get_clip_ops(cost.network.sigma))
 
+    print('Setting up optimizer')
     opt_op = optimizer.minimize(c, var_list=vars)
 
     init = tf.global_variables_initializer()
     with tf.Session() as sess:
+        print('Initializing')
         sess.run(init)
+        print('Printing')
         update_net_from_tf(sess, net, cost.network)
         net.print()
         print('******************')

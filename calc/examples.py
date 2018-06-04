@@ -156,7 +156,8 @@ def make_big_system():
     # V6, V6A: should really use Shipp et al. 2001 rather than CoCoMac, but map to PO for now
 
     system = System()
-    system.add_input(750000, .2)
+    w_rf_0 = .2
+    system.add_input(750000, w_rf_0)
 
     # Estimates of LGN cell numbers (one side) from:
     # Weber, Arthur J., et al. (2000) Experimental glaucoma and cell size, density, and number in the primate lateral
@@ -179,8 +180,9 @@ def make_big_system():
     # geniculate nucleus of macaque.The Journal of Physiology, 357(1), 219 - 240.
 
     # Pixels correspond roughly to retinal ganglion cells
-    system.add('parvo_LGN', n_parvo_LGN, 5, .2)
-    system.add('magno_LGN', n_magno_LGN, 5, .3)
+    # Setting LGN RF sizes similar to input (one-pixel kernels)
+    system.add('parvo_LGN', n_parvo_LGN, 5, 1.041*w_rf_0)
+    system.add('magno_LGN', n_magno_LGN, 5, 1.155*w_rf_0)
     system.connect_areas(system.input_name, 'parvo_LGN', 1.)
     system.connect_areas(system.input_name, 'magno_LGN', 1.)
 
