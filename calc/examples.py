@@ -100,7 +100,7 @@ def connect_areas_in_streams(system, cortical_areas):
             if source in cortical_areas and get_feedforward(source, target):
                 FLNe = m.get_FLNe(source, target)
                 SLN = m.get_SLN(source, target)
-                # print('{}->{} FLNe: {} SLN: {}'.format(source, target, FLNe, SLN))
+                print('{}->{} FLNe: {} SLN: {}'.format(source, target, FLNe, SLN))
                 # FLN, SLF, TLF = get_connection_details(source, target)
 
                 target_pop = '{}_4'.format(target)
@@ -238,8 +238,10 @@ def make_big_system():
     # DeYoe, E. A., & Van Essen, D. C. (1988). Concurrent processing streams in monkey visual cortex.
     # Trends in neurosciences, 11(5), 219-226.
 
-    cortical_areas = ['V1', 'V2', 'V3', 'V3A', 'V4', 'V4t', 'MT', 'V6', 'DP',
-                      'MST', 'FST', '7A', '7B', 'VIP', 'PIP', 'TEO', 'TEpd', 'TEpv', 'TEav']
+    # cortical_areas = ['V1', 'V2', 'V3', 'V3A', 'V4', 'V4t', 'MT', 'V6', 'DP',
+    #                   'MST', 'FST', '7A', '7B', 'VIP', 'PIP', 'TEO', 'TEpd', 'TEpv', 'TEav']
+    cortical_areas = ['V1', 'V2', 'V3', 'V4', 'MT', 'V6', 'DP',
+                      'MST', '7A', 'VIP', 'TEO', 'TEpd', 'TEpv']
     add_areas(system, [a for a in cortical_areas if a not in ('V1', 'V2')])
     connect_areas_in_streams(system, cortical_areas)
 

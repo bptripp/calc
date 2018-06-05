@@ -35,6 +35,7 @@ class SystemConstants:
 
         for projection in system.projections:
             if isinstance(projection, InterAreaProjection):
+                print('{} f={}'.format(projection.get_description(), projection.f))
                 self.f.append(tf.constant(float(projection.f)))
                 self.b.append(None)
             elif isinstance(projection, InterLaminarProjection):
@@ -527,15 +528,23 @@ def make_net_from_system(system, image_layer=0, image_channels=3.):
 
 
 def update_net_from_tf(sess, net, nv):
+    m = sess.run(nv.m)
+    width = sess.run(nv.width)
     for i in range(len(net.layers)):
-        net.layers[i].m = sess.run(nv.m[i])
-        net.layers[i].width = sess.run(nv.width[i])
+        # print('layer {} of {}'.format(i, len(net.layers)))
+        net.layers[i].m = m[i]
+        net.layers[i].width = width[i]
 
+    c = sess.run(nv.c)
+    s = sess.run(nv.s)
+    w = sess.run(nv.w)
+    sigma = sess.run(nv.sigma)
     for i in range(len(net.connections)):
-        net.connections[i].c = sess.run(nv.c[i])
-        net.connections[i].s = sess.run(nv.s[i])
-        net.connections[i].w = sess.run(nv.w[i])
-        net.connections[i].sigma = sess.run(nv.sigma[i])
+        # print('connection {} of {}'.format(i, len(net.connections)))
+        net.connections[i].c = c[i]
+        net.connections[i].s = s[i]
+        net.connections[i].w = w[i]
+        net.connections[i].sigma = sigma[i]
 
 
 def optimize_net(sess, opt_op, iterations=100, clip_ops=[]):
@@ -601,6 +610,9 @@ def test_stride_pattern(system):
         + cost.sparsity_constraint_cost(1.)
 
     pc = cost.param_cost(1.)
+    fc = cost.match_cost_f(1.)
+    bc = cost.match_cost_b(1.)
+    ec = cost.match_cost_e(1.)
     wc = cost.match_cost_w(1.)
 
     vars = []
@@ -630,7 +642,7 @@ def test_stride_pattern(system):
         training_curve.append((0, sess.run(c), sess.run(pc), sess.run(wc)))
 
         # _print_cost(sess, cost)
-        print('cost: {} param-cost: {} RF-cost: {}'.format(sess.run(c), sess.run(pc), sess.run(wc)))
+        print('cost: {} param-cost: {} f-cost: {} b-cost {} e-cost {} RF-cost: {}'.format(sess.run(c), sess.run(pc), sess.run(fc), sess.run(bc), sess.run(ec), sess.run(wc)))
 
         iterations = 100
         for i in range(201):
@@ -638,9 +650,17 @@ def test_stride_pattern(system):
             cost_i = sess.run(c)
             cost_p_i = sess.run(pc)
             cost_w_i = sess.run(wc)
-            print('cost: {} param-cost: {} RF-cost: {}'.format(cost_i, cost_p_i, cost_w_i))
+            # print('cost: {} param-cost: {} RF-cost: {}'.format(cost_i, cost_p_i, cost_w_i))
+            print('cost: {} param-cost: {} f-cost: {} b-cost {} e-cost {} RF-cost: {}'.format(cost_i, cost_p_i,
+                                                                                              sess.run(fc),
+                                                                                              sess.run(bc),
+                                                                                              sess.run(ec),
+                                                                                              cost_w_i))
             training_curve.append((iterations*i, cost_i, cost_p_i, cost_w_i))
             # _print_cost(sess, cost)
+
+            if np.isnan(cost_i):
+                break
 
         update_net_from_tf(sess, net, cost.network)
         net.print()

@@ -72,7 +72,8 @@ class InterLaminarProjection(Projection):
 
 
 class System:
-    def __init__(self):
+    def __init__(self, min_f=1e-6):
+        self.min_f = min_f
         self.input_name = 'INPUT'
         self.populations = []
         self.projections = []
@@ -103,7 +104,10 @@ class System:
         if termination is None:
             raise Exception(termination_name + ' is not in the system')
 
-        self.projections.append(InterAreaProjection(origin, termination, f))
+        if f >= self.min_f:
+            self.projections.append(InterAreaProjection(origin, termination, f))
+        else:
+            print('Omitting connection {}->{} with f={}'.format(origin_name, termination_name, f))
 
     def connect_layers(self, origin_name, termination_name, b):
         origin = self.find_population(origin_name)

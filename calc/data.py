@@ -1,3 +1,5 @@
+import os
+import inspect
 import nibabel
 import numpy as np
 import xml.etree.ElementTree as ET
@@ -36,6 +38,11 @@ distributed functions, 3-47.
 G. N. Elston, “Cortical heterogeneity: Implications for visual processing and polysensory integration,” 
 J. Neurocytol., vol. 31, no. 3–5 SPEC. ISS., pp. 317–335, 2002.
 """
+
+
+def data_folder():
+    return os.path.dirname(inspect.stack()[0][1]) + '/data_files'
+
 
 # Sincich, L. C., Adams, D. L., & Horton, J. C. (2003). Complete flatmounting of the macaque cerebral
 # cortex. Visual neuroscience, 20(6), 663-686.
@@ -738,10 +745,11 @@ class CoCoMac:
     available.
     """
     def __init__(self):
-        with open('data_files/cocomac/connectivity_matrix_layers.json') as file:
+        folder = data_folder()
+        with open(folder + '/cocomac/connectivity_matrix_layers.json') as file:
             self.layers = json.load(file)
 
-        with open('data_files/cocomac/connectivity_matrix_densities.json') as file:
+        with open(folder + '/cocomac/connectivity_matrix_densities.json') as file:
             self.densities = json.load(file)
 
     @staticmethod
