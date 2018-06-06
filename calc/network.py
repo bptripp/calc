@@ -38,10 +38,18 @@ class Network:
         self.connections = []
 
     def add(self, name, m, width):
-        self.layers.append(Layer(name, m, width))
+        result = Layer(name, m, width)
+        self.layers.append(result)
+        return result
 
     def connect(self, pre, post, c, s, w, sigma):
-        self.connections.append(Connection(pre, post, c, s, w, sigma))
+        if isinstance(pre, str):
+            pre = self.find_layer(pre)
+        if isinstance(post, str):
+            post = self.find_layer(post)
+        result = Connection(pre, post, c, s, w, sigma)
+        self.connections.append(result)
+        return result
 
     def find_layer(self, name):
         result = None

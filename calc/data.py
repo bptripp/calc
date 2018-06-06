@@ -433,7 +433,7 @@ def _get_synapses_per_layer_V2(layer, rescale=True):
 
 
 def _get_synapses_per_layer_cat_V1(layer):
-    with open('data_files/BDM04-Supplementary.txt') as file:
+    with open(data_folder() + '/BDM04-Supplementary.txt') as file:
         found_layer = False
         table = []
         while True:
@@ -593,18 +593,20 @@ class Yerkes19:
     """
 
     def __init__(self):
-        midthickness_data = nibabel.load('data_files/donahue/MacaqueYerkes19.R.midthickness.32k_fs_LR.surf.gii')
+        folder = data_folder()
+
+        midthickness_data = nibabel.load(folder + '/donahue/MacaqueYerkes19.R.midthickness.32k_fs_LR.surf.gii')
         self.midthickness_points \
             = np.array(midthickness_data.get_arrays_from_intent('NIFTI_INTENT_POINTSET')[0].data)
         self.triangles \
             = np.array(midthickness_data.get_arrays_from_intent('NIFTI_INTENT_TRIANGLE')[0].data)
 
-        very_inflated_data = nibabel.load('data_files/donahue/MacaqueYerkes19.R.very_inflated.32k_fs_LR.surf.gii')
+        very_inflated_data = nibabel.load(folder + '/donahue/MacaqueYerkes19.R.very_inflated.32k_fs_LR.surf.gii')
         self.very_inflated_points \
             = np.array(very_inflated_data.get_arrays_from_intent('NIFTI_INTENT_POINTSET')[0].data)
 
         #TODO: make this automatically
-        label_tree = ET.parse('data_files/donahue/MarkovCC12_M132_91-area.32k_fs_LR.dlabel.xml')
+        label_tree = ET.parse(folder + '/donahue/MarkovCC12_M132_91-area.32k_fs_LR.dlabel.xml')
         root = label_tree.getroot()
 
         self.areas = []
@@ -620,7 +622,7 @@ class Yerkes19:
                     point_inds.append(int(s))
         self.point_inds = np.array(point_inds)
 
-        label_data = nibabel.load('data_files/donahue/MarkovCC12_M132_91-area.32k_fs_LR.dlabel.nii')
+        label_data = nibabel.load(folder + '/donahue/MarkovCC12_M132_91-area.32k_fs_LR.dlabel.nii')
         self.point_area_inds = np.array(label_data.get_data()).flatten()[:len(self.point_inds)]
         self._assign_triangles()
 
@@ -989,7 +991,7 @@ def _read_fraction_labelled_neurons_extrinsic():
     targets = []
     fractions = []
 
-    with open('data_files/markov/Cercor_2012 Table.csv') as csvfile:
+    with open(data_folder() + '/markov/Cercor_2012 Table.csv') as csvfile:
         r = csv.reader(csvfile)
         header_line = True
         for row in r:
@@ -1010,7 +1012,7 @@ def _read_supragranular_layers_percent():
     percents = []
     distances = []
 
-    with open('data_files/markov/JCN_2013 Table.csv') as csvfile:
+    with open(data_folder() + '/markov/JCN_2013 Table.csv') as csvfile:
         r = csv.reader(csvfile)
         header_line = True
         for row in r:
