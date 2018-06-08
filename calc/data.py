@@ -7,6 +7,29 @@ import csv
 import json
 
 """
+TODO:
+
+Account for spine density vs hierarchy as in: 
+Chaudhuri, Rishidev, et al. "A large-scale circuit mechanism for hierarchical dynamical processing 
+in the primate cortex." Neuron 88.2 (2015): 419-431.
+
+Omit deep neurons in early areas that project to SC: 
+Fries, Wolfgang. "Cortical projections to the superior colliculus in the macaque monkey: a retrograde 
+study using horseradish peroxidase." Journal of Comparative Neurology 230.1 (1984): 55-76.
+Hübener, Mark, Cornelius Schwarz, and Jürgen Bolz. "Morphological types of projection neurons in layer 
+5 of cat visual cortex." Journal of comparative neurology 301.4 (1990): 655-674.
+
+Also omit callosal neurons.
+J. C. Houzel, M. L. Carvalho, and R. Lent, “Interhemispheric connections between primary visual 
+areas: Beyond the midline rule,” Brazilian J. Med. Biol. Res., vol. 35, no. 12, pp. 1441–1453, 2002.
+
+Also account for non-projecting pyramidal cells: 
+Gilbert, Charles D., and TORSTEN N. Wiesel. "Clustered intrinsic connections in cat visual cortex." 
+Journal of Neuroscience 3.5 (1983): 1116-1133.
+
+"""
+
+"""
 Where possible, connection strengths and origin layers are taken from:
 
 Markov, N. T., Ercsey-Ravasz, M. M., Ribeiro Gomes, A. R., Lamy, C., Magrou, L., Vezoli, 
