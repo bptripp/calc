@@ -15,7 +15,7 @@ from calc.data import get_layers, get_num_neurons, get_RF_size, synapses_per_neu
 from calc.data import map_M14_to_FV91
 # from calc.data import get_sources, get_feedforward, get_connection_details
 import calc.data
-import calc.conversion
+import calc.optimization
 
 
 def make_system(cortical_areas):
@@ -238,8 +238,8 @@ def make_big_system():
     # DeYoe, E. A., & Van Essen, D. C. (1988). Concurrent processing streams in monkey visual cortex.
     # Trends in neurosciences, 11(5), 219-226.
 
-    # cortical_areas = ['V1', 'V2', 'V3', 'V3A', 'V4', 'V4t', 'MT', 'V6', 'DP',
-    #                   'MST', 'FST', '7A', '7B', 'VIP', 'PIP', 'TEO', 'TEpd', 'TEpv', 'TEav']
+    # cortical_areas = ['V1', 'V2', 'V3', 'V3A', 'PIP', 'V4', 'V4t', 'MT', 'V6', 'DP',
+    #                   'MST', 'FST', 'TEO', 'TEpd', 'TEpv', 'VIP', '7A', '7B', 'TEav']
     cortical_areas = ['V1', 'V2', 'V3', 'V4', 'MT', 'V6', 'DP',
                       'MST', '7A', 'VIP', 'TEO', 'TEpd', 'TEpv']
     add_areas(system, [a for a in cortical_areas if a not in ('V1', 'V2')])
@@ -293,13 +293,15 @@ def make_small_system(miniaturize=False):
             if population.name != system.input_name:
                 population.n = population.n / 20
 
+    system.prune_FLNe()
+    system.check_connected()
     system.print_description()
-
-    # calc.conversion.test_stride_patterns(system)
+    return system
 
 
 if __name__ == '__main__':
-    # make_small_system(miniaturize=True)
+    # system = make_small_system(miniaturize=True)
     system = make_big_system()
-    net, training_curve = calc.conversion.test_stride_patterns(system, n=1)
+    system.print_description()
+    # net, training_curve = calc.optimization.test_stride_patterns(system, n=1)
 

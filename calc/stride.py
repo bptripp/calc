@@ -171,6 +171,7 @@ class StridePattern:
         if not done:
             print('initialization failed; exact cumulative {}, min {}, max {}'.format(exact_cumulative, min_stride, max_stride))
 
+
 def initialize_network(system, candidate, image_layer=0, image_channels=3.):
     """
     :param system TODO

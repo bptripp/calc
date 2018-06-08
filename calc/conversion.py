@@ -2,8 +2,6 @@ from calc.system import InterLaminarProjection, InterAreaProjection
 from calc.network import Network
 import tensorflow as tf
 import numpy as np
-from calc.stride import StridePattern, initialize_network
-import pickle
 
 #TODO: refactor finer-grained cost objects that encapsulate individual terms, associated NetworkVariables & SystemConstants
 
@@ -66,15 +64,12 @@ class NetworkVariables:
         # hyperparameters wrapped as TF variables ...
         self.m = [] # number of feature maps in each layer
         self.width = [] # width of feature maps each layer
-        # self.m_scaled = []
-        # self.width_scaled = []
 
         self.c = [] # fraction of feature maps in pre layer that contribute to each connection
         self.sigma = [] # pixel-wise sparsity of each connection
 
         # an additional variable from which some connection hyperparams are derived ...
         self.w_rf = [] # RF width of each layer in degrees visual angle
-        # self.w_rf_scaled = []
 
         # set separately (not suitable for gradient descent)
         self.s = [] # stride of each connection
@@ -130,18 +125,6 @@ class NetworkVariables:
         for i in range(len(w_rf_init)):
             self.w_rf.append(get_variable('{}-w_rf_s'.format(network.layers[i].name), w_rf_init[i]))
 
-        # set RF width as in system if defined; otherwise set to None
-        # for population in system.populations:
-        #     if population.w is not None:
-        #         # w_rf = 2. + 5.*np.random.rand() if population.w is None else population.w
-        #         self.w_rf.append(get_variable('{}-w_rf_s'.format(population.name), population.w))
-        #     else:
-        #         self.w_rf.append(None) #TODO: can't do this
-
-        # replace image-channels variable with constant (it shouldn't change) ...
-        # self.m[image_layer] = tf.constant(float(network.layers[image_layer].m))
-        # self.m_scaled[image_layer] = None
-
         for connection in network.connections:
             conn_name = '{}-{}'.format(connection.pre.name, connection.post.name)
 
@@ -153,46 +136,22 @@ class NetworkVariables:
 
             self.s.append(tf.constant(connection.s, dtype=tf.float32))
 
-            # derived parameters ...
-            # stride_name = '{}_{}_stride'.format(connection.pre.name, connection.post.name)
-            # self.s.append(tf.divide(self.width[pre_ind], self.width[post_ind], name=stride_name)) # width j over width i
-
-            # if self.w_rf[pre_ind] is None or self.w_rf[post_ind] is None:
-            #     self.w.append(get_variable('{}-w'.format(conn_name), connection.w))
-            # else:
             pre_pixel_width = image_pixel_width * self.width[image_layer] / self.width[pre_ind]
             # convert RF sizes from degrees visual angle to *pre-layer* pixels (units of the kernel)...
-            #TODO: deal with equal RF sizes
             sigma_post = tf.divide(self.w_rf[post_ind], pre_pixel_width)
             sigma_pre = tf.divide(self.w_rf[pre_ind], pre_pixel_width)
             sigma_kernel = tf.sqrt(sigma_post**2 - sigma_pre**2)
             w = tf.constant(12**.5) * sigma_kernel
-            # w = get_variable('{}-w'.format(conn_name), tf.constant(12**.5) * sigma_kernel)
             self.w.append(w)
 
             self.pres.append(pre_ind)
             self.posts.append(post_ind)
 
-            # init = tf.global_variables_initializer()
-            # with tf.Session() as sess:
-            #     sess.run(init)
-            #     print(conn_name)
-            #     print('w: {} sigma_kernel: {} sigma_pre: {} sigma_post: {}'.format(sess.run(w), sess.run(sigma_kernel), sess.run(sigma_pre), sess.run(sigma_post)))
-
     def collect_variables(self):
         vars = []
-
-        # # note one of the m's is a constant
-        # for i in range(len(self.m)):
-        #     if self.m_scaled[i] is not None:
-        #         vars.append(self.m_scaled[i])
-
-        # vars.extend(self.width_scaled)
         vars.extend(self.c)
-        # vars.extend(self.w_rf_scaled)
         vars.extend(self.w_rf)
         vars.extend(self.sigma)
-
         return vars
 
 
@@ -250,11 +209,6 @@ class Cost:
 
                 term = norm_squared_error(e_system, e_network)
                 terms.append(term)
-
-                # init = tf.global_variables_initializer()
-                # with tf.Session() as sess:
-                #     sess.run(init)
-                #     print('e: {} {} term: {}'.format(sess.run(e_system), sess.run(e_network), sess.run(term)))
 
         return tf.constant(kappa) * tf.reduce_mean(terms)
 
@@ -413,8 +367,6 @@ class Cost:
         Prints comparison of system target properties with properties calculated from network.
         """
 
-        # This is a good place to add debugging code
-
         for i in range(len(system.populations)):
             pop = system.populations[i]
             n = round(sess.run(self._get_n_network(i)))
@@ -423,7 +375,6 @@ class Cost:
                 w = -1
             else:
                 w = sess.run(self.network.w_rf[i])
-            # print('{} n:[{}|{}] e:[{}|{:10.6f}] w:[{}|{:10.6f}]'.format(pop.name, pop.n, n, pop.e, e, pop.w, w))
             print('{}, {}, {}, {:10.6f}, {}, {:10.6f};'.format(pop.n, n, pop.e, e, pop.w, w))
 
         for ij in range(len(system.projections)):
@@ -501,7 +452,6 @@ def make_net_from_system(system, image_layer=0, image_channels=3.):
         pre = net.find_layer(projection.origin.name)
         post = net.find_layer(projection.termination.name)
 
-        # c = projection.f
         c = .1 + .2*np.random.rand()
         s = 1. + 9.*np.random.rand()
         rf_ratio = projection.termination.w / projection.origin.w
@@ -511,20 +461,6 @@ def make_net_from_system(system, image_layer=0, image_channels=3.):
         net.connect(pre, post, c, s, w, sigma)
 
     return net
-
-
-# def adjust_net(system, net):
-#     for i in range(len(system.projections)):
-#         target_f = system.projections[i].f
-#
-#         total_dense_inputs = 0
-#         termination_name = system.projections[i].termination.name
-#         for origin_name in system.find_pre(termination_name):
-#             conn_ind = system.find_projection_index(origin_name, termination_name)
-#             layer_ind = system.find_population_index(origin_name)
-#             w = net.connections[conn_ind].w
-#             m = net.layers[layer_ind].m
-#             total_dense_inputs = total_dense_inputs + w**2 * m
 
 
 def update_net_from_tf(sess, net, nv):
@@ -547,371 +483,9 @@ def update_net_from_tf(sess, net, nv):
         net.connections[i].sigma = sigma[i]
 
 
-def optimize_net(sess, opt_op, iterations=100, clip_ops=[]):
-
-    # gradients = tf.gradients(c, vars)
-    for i in range(iterations):
-        # for i in range(len(vars)):
-        #     if gradients[i] is not None:
-        #         print('grad wrt {}: {}'.format(vars[i].name, sess.run(gradients[i])))
-        opt_op.run()
-
-        for clip_op in clip_ops:
-            sess.run(clip_op)
-
-
 def print_gradients(cost, vars):
     gradients = tf.gradients(cost, vars)
     for i in range(len(vars)):
         if gradients[i] is not None:
             print('grad wrt {}: {}'.format(vars[i].name, sess.run(gradients[i])))
 
-def test_stride_patterns(system, n=5):
-    #TODO: consider keeping multiple graphs (https://www.tensorflow.org/programmers_guide/graphs#programming_with_multiple_graphs)
-
-    import matplotlib.pyplot as plt
-
-    nets = [None] * n
-    training_curves = [None] * n
-    for i in range(n):
-        tf.reset_default_graph()
-        nets[i], training_curves[i] = test_stride_pattern(system)
-        tc = np.array(training_curves[i])
-        print(tc.shape)
-        plt.semilogy(tc[:,0], tc[:,1])
-
-    data = {
-        'training_curves': training_curves,
-        'nets': nets
-    }
-    with open('calc-training.pickle', 'wb') as f:
-        pickle.dump(data, f)
-
-    plt.show()
-
-
-def test_stride_pattern(system):
-    candidate = StridePattern(system, 32)
-    candidate.fill()
-    net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
-
-    optimizer = tf.train.AdamOptimizer()
-    print('Setting up cost structure')
-    cost = Cost(system, net)
-
-    # RF widths are very well initialized, so we don't have to do anything further with them
-    # - trying less initialization
-    print('Defining cost function')
-    c = cost.match_cost_f(1.) \
-        + cost.match_cost_b(1.) \
-        + cost.match_cost_e(1.) \
-        + cost.match_cost_w(1.) \
-        + cost.param_cost(1e-11) \
-        + cost.sparsity_constraint_cost(1.)
-
-    pc = cost.param_cost(1.)
-    fc = cost.match_cost_f(1.)
-    bc = cost.match_cost_b(1.)
-    ec = cost.match_cost_e(1.)
-    wc = cost.match_cost_w(1.)
-
-    vars = []
-    vars.extend(cost.network.c)
-    vars.extend(cost.network.sigma)
-    for w_rf in cost.network.w_rf:
-        if isinstance(w_rf, tf.Variable):
-            vars.append(w_rf)
-
-    clip_ops = []
-    clip_ops.extend(get_clip_ops(cost.network.c))
-    clip_ops.extend(get_clip_ops(cost.network.sigma))
-
-    print('Setting up optimizer')
-    opt_op = optimizer.minimize(c, var_list=vars)
-
-    init = tf.global_variables_initializer()
-    with tf.Session() as sess:
-        print('Initializing')
-        sess.run(init)
-        print('Printing')
-        update_net_from_tf(sess, net, cost.network)
-        net.print()
-        print('******************')
-
-        training_curve = []
-        training_curve.append((0, sess.run(c), sess.run(pc), sess.run(wc)))
-
-        # _print_cost(sess, cost)
-        print('cost: {} param-cost: {} f-cost: {} b-cost {} e-cost {} RF-cost: {}'.format(sess.run(c), sess.run(pc), sess.run(fc), sess.run(bc), sess.run(ec), sess.run(wc)))
-
-        iterations = 100
-        for i in range(201):
-            optimize_net(sess, opt_op, iterations=iterations, clip_ops=clip_ops)
-            cost_i = sess.run(c)
-            cost_p_i = sess.run(pc)
-            cost_w_i = sess.run(wc)
-            # print('cost: {} param-cost: {} RF-cost: {}'.format(cost_i, cost_p_i, cost_w_i))
-            print('cost: {} param-cost: {} f-cost: {} b-cost {} e-cost {} RF-cost: {}'.format(cost_i, cost_p_i,
-                                                                                              sess.run(fc),
-                                                                                              sess.run(bc),
-                                                                                              sess.run(ec),
-                                                                                              cost_w_i))
-            training_curve.append((iterations*i, cost_i, cost_p_i, cost_w_i))
-            # _print_cost(sess, cost)
-
-            if np.isnan(cost_i):
-                break
-
-        update_net_from_tf(sess, net, cost.network)
-        net.print()
-        print('******************')
-        cost.compare_system(system, sess)
-
-    return net, training_curve
-
-def _print_cost(sess, cost):
-    cost_f = sess.run(cost.match_cost_f(1.))
-    cost_b = sess.run(cost.match_cost_b(1.))
-    cost_e = sess.run(cost.match_cost_e(1.))
-    cost_constraint = sess.run(cost.sparsity_constraint_cost(1.))
-    print('cost terms f:{} b:{} e:{} c:{}'.format(cost_f, cost_b, cost_e, cost_constraint))
-
-
-def make_optimal_network(system):
-
-
-    net = make_net_from_system(system)
-    cost = Cost(system, net)
-    # TODO: don't need n in optimization
-    c = cost.match_cost_n(1.) \
-        + cost.match_cost_w(1.) \
-        + cost.match_cost_e(1.) \
-        + cost.match_cost_f(1.) \
-        + cost.match_cost_b(1.) \
-        + cost.constraint_cost(1.)
-
-    optimizer = tf.train.AdamOptimizer()
-    vars = cost.network.collect_variables()
-    opt_op = optimizer.minimize(c, var_list=vars)
-
-    # opt_fast = tf.train.AdamOptimizer()
-    c_e = cost.match_cost_e(1.)
-    opt_op_e = optimizer.minimize(c_e, var_list=cost.network.sigma)
-
-    c_partial = cost.match_cost_f(1.) + cost.match_cost_e(1.)
-    vars_partial = []
-    vars_partial.extend(cost.network.c)
-    vars_partial.extend(cost.network.sigma)
-    opt_op_partial = optimizer.minimize(c_partial, var_list=vars_partial)
-
-    clip_ops = []
-    clip_ops.extend(get_clip_ops(cost.network.c))
-    clip_ops.extend(get_clip_ops(cost.network.sigma))
-
-    init = tf.global_variables_initializer()
-    with tf.Session() as sess:
-        sess.run(init)
-
-        update_net_from_tf(sess, net, cost.network)
-
-        # net.print()
-        # cost.compare_system(system, sess)
-
-        print('optimize e')
-        for i in range(10):
-            optimize_net(sess, opt_op_e, clip_ops=clip_ops)
-            cost_i = sess.run(c_e)
-            print('cost: {}'.format(cost_i))
-
-        update_net_from_tf(sess, net, cost.network)
-        net.print()
-        cost.compare_system(system, sess)
-
-        print('optimize f and e')
-        for i in range(20):
-            optimize_net(sess, opt_op_partial, clip_ops=clip_ops)
-            cost_i = sess.run(c_partial)
-            print('cost: {}'.format(cost_i))
-
-        update_net_from_tf(sess, net, cost.network)
-        net.print()
-        cost.compare_system(system, sess)
-
-        print('optimize full')
-        cost_best = 1e10
-        for i in range(20): #TODO: more iterations here
-            optimize_net(sess, opt_op, clip_ops=clip_ops)
-
-            cost_i = sess.run(c)
-            print('cost: {}'.format(cost_i))
-
-            if cost_i < cost_best:
-                cost_best = cost_i
-                update_net_from_tf(sess, net, cost.network)
-
-            if i % 20 == 0:
-                print(sess.run(cost.match_cost_n(1.)))
-                print(sess.run(cost.match_cost_w(1.)))
-                print(sess.run(cost.match_cost_e(1.)))
-                print(sess.run(cost.match_cost_f(1.)))
-                print(sess.run(cost.match_cost_b(1.)))
-
-            if np.isnan(cost_i):
-                print('optimization failed')
-                break
-
-        # update_net_from_tf(sess, net, cost.network)
-        net.print()
-
-        cost.compare_system(system, sess)
-        return net
-
-
-if __name__ == '__main__':
-    from calc.system import get_example_small, get_example_medium
-    system = get_example_small()
-    # system = get_example_medium()
-
-    net = make_net_from_system(system)
-    cost = Cost(system, net)
-    # init = tf.global_variables_initializer()
-    # with tf.Session() as sess:
-    #     sess.run(init)
-    #     update_net_from_tf(sess, net, cost.network)
-    # adjust_net(system, net)
-    # cost = Cost(system, net)
-
-
-    # c = cost.match_cost_f(1.)
-    c = cost.match_cost_n(1.) \
-        + cost.match_cost_w(1.) \
-        + cost.match_cost_e(1.) \
-        + cost.match_cost_f(1.) \
-        + cost.match_cost_b(1.) \
-        + cost.constraint_cost(1.)
-    # c = cost.match_cost_w(1.) + cost.match_cost_e(1.) + cost.match_cost_f(1.) + cost.constraint_cost(1.)
-    # c = cost.match_cost_n(1.) + cost.match_cost_w(1.) + cost.match_cost_e(1.) + cost.constraint_cost(1.)
-    # + cost.param_cost(.000001)
-
-
-    # opt_slow = tf.train.AdamOptimizer(learning_rate=.00001, epsilon=10-4)
-    opt_slow = tf.train.AdamOptimizer()
-    vars = cost.network.collect_variables()
-    opt_op = opt_slow.minimize(c, var_list=vars)
-
-    opt_fast = tf.train.AdamOptimizer()
-    c_e = cost.match_cost_e(1.)
-    opt_op_e = opt_fast.minimize(c_e, var_list=cost.network.sigma)
-
-    c_partial = cost.match_cost_f(1.) + cost.match_cost_e(1.)
-    vars_partial = []
-    vars_partial.extend(cost.network.c)
-    vars_partial.extend(cost.network.sigma)
-    opt_op_partial = opt_fast.minimize(c_partial, var_list=vars_partial)
-
-    clip_vars = []
-    clip_vars.extend(cost.network.c)
-    clip_vars.extend(cost.network.sigma)
-
-    clip_ops = get_clip_ops(clip_vars)
-
-    init = tf.global_variables_initializer()
-    with tf.Session() as sess:
-
-        sess.run(init)
-
-        # cost.compare_system(system, sess)
-
-        # update_net_from_tf(sess, net, cost.network)
-        # print('After move to TF: ')
-        # net.print()
-
-        # print_gradients(c, vars)
-
-        # print(sess.run(cost.match_cost_n(1.)))
-        # print(sess.run(cost.match_cost_w(1.)))
-        # print(sess.run(cost.match_cost_e(1.)))
-        # print(sess.run(cost.match_cost_f(1.)))
-        # print(sess.run(cost.constraint_cost(1.)))
-
-        update_net_from_tf(sess, net, cost.network)
-        net.print()
-        cost.compare_system(system, sess)
-        # for i in range(len(net.connections)):
-        # # for w in cost.network.w:
-        #     print(net.connections)
-        #     print(sess.run(w))
-
-        print('optimize e')
-        for i in range(10):
-            optimize_net(sess, opt_op_e, clip_ops=clip_ops)
-            cost_i = sess.run(c_e)
-            print('cost: {}'.format(cost_i))
-
-        update_net_from_tf(sess, net, cost.network)
-        net.print()
-        cost.compare_system(system, sess)
-
-        print('optimize partial')
-        for i in range(20):
-            optimize_net(sess, opt_op_partial, clip_ops=clip_ops)
-            cost_i = sess.run(c_partial)
-            print('cost: {}'.format(cost_i))
-
-        update_net_from_tf(sess, net, cost.network)
-        net.print()
-        cost.compare_system(system, sess)
-
-        print('optimize full')
-        cost_best = 1e10
-        dc_dw = tf.gradients(c, cost.network.w)
-        for i in range(250):
-            # for d in dc_dw:
-            #     print(sess.run(d))
-            # for w in cost.network.w:
-            #     print(sess.run(w))
-            optimize_net(sess, opt_op, clip_ops=clip_ops)
-
-            cost_i = sess.run(c)
-            print('cost: {}'.format(cost_i))
-
-            if cost_i < cost_best:
-                cost_best = cost_i
-                update_net_from_tf(sess, net, cost.network)
-
-            if i % 10 == 0:
-                print(sess.run(cost.match_cost_n(1.)))
-                print(sess.run(cost.match_cost_w(1.)))
-                print(sess.run(cost.match_cost_e(1.)))
-                print(sess.run(cost.match_cost_f(1.)))
-                print(sess.run(cost.match_cost_b(1.)))
-
-            if np.isnan(cost_i):
-                print('optimization failed')
-                break
-
-        # update_net_from_tf(sess, net, cost.network)
-        net.print()
-
-        cost.compare_system(system, sess)
-
-        import pickle
-        with open('net.pkl', 'wb') as netfile:
-            pickle.dump(net, netfile)
-
-
-        # print(sess.run(cost.match_cost_n(1.)))
-        # print(sess.run(cost.match_cost_e(1.)))
-        # print(sess.run(cost.match_cost_w(1.)))
-        # print(sess.run(cost.match_cost_f(1.)))
-        #
-        # print('e values: ')
-        # print(sess.run(cost._get_e_network(1)))
-        # print(sess.run(cost._get_e_network(2)))
-        #
-        # # note gradient is None if there is no relation
-        # print_gradients(c, vars)
-        #
-        # print('Variable values:')
-        # for var in vars:
-        #     print('{}: {}'.format(var.name, sess.run(var)))
