@@ -324,6 +324,97 @@ FV91_hierarchy = {
 }
 
 
+class E07:
+    """
+    Data on spine counts from G. N. Elston, “Specialization of the Neocortical Pyramidal
+    Cell during Primate Evolution,” Evol. Nerv. Syst., pp. 191–242, 2007.
+    """
+    def __init__(self):
+
+        # From figures 8 and 11
+        self.layer_3_basal_spine_count = {
+            'V1': 812,
+            'V2': 1326,
+            'V4': 2588,
+            'TEO': 5023,
+            'TE': 7385,
+            '3b': 3062,
+            '4': 4598,
+            '5': 4735,
+            '6': 8318,
+            '7': 6892
+        }
+
+        # Mappings from area names used in Elston to corresponding areas in Yerkes atlas
+        self.yerkes_mappings = {
+            'TE': ['TEad', 'TEa/ma', 'TEa/mp', 'TEav', 'TEpd', 'TEpv'],
+            '7': ['7A', '7B', '7m', '7op'],
+            '3b': ['3'],
+            '4': ['F1'],
+            '6': ['F3', 'F6']  # see Luppino & Rizzolati (2000)
+        }
+
+        self._fit()
+
+    def _fit(self):
+        centre_V1 = yerkes19.get_centre('V1')
+        distances = []
+        spine_counts = []
+        for key in self.layer_3_basal_spine_count.keys():
+            if key in yerkes19.areas:
+                areas = [key]
+            else:
+                areas = self.yerkes_mappings[key]
+
+            centres = []
+            for area in areas:
+                centres.append(yerkes19.get_centre(area))
+            distance = np.linalg.norm(centre_V1 - np.mean(centres, axis=0))
+            distances.append(distance)
+            spine_counts.append(self.layer_3_basal_spine_count[key])
+
+        p = np.polyfit(distances, spine_counts, 1)
+        self.intercept = p[1]
+        self.slope = p[0]
+
+        # import matplotlib.pyplot as plt
+        # plt.plot(distances, spine_counts, '.')
+        # plt.plot([0, 50], p[1] + [0, p[0]*50], 'k')
+        # plt.show()
+
+    def get_spine_count(self, area):
+        if area in self.layer_3_basal_spine_count.keys():
+            return self.layer_3_basal_spine_count[area]
+        else:
+            for key in self.yerkes_mappings.keys():
+                if area in self.yerkes_mappings[key]:
+                    return self.layer_3_basal_spine_count[key]
+
+            if area in yerkes19.areas:
+                centre_V1 = yerkes19.get_centre('V1')
+                centre_area = yerkes19.get_centre(area)
+                distance = np.linalg.norm(centre_V1 - centre_area)
+                return self.intercept + self.slope*distance
+            else:
+                return None
+
+
+def plot_spine_count_estimates():
+    e07 = E07()
+    centre_V1 = yerkes19.get_centre('V1')
+    distances = []
+    spine_counts = []
+    for area in yerkes19.areas:
+        print(area)
+        centre = yerkes19.get_centre(area)
+        distances.append(np.linalg.norm(centre_V1 - centre))
+        spine_counts.append(e07.get_spine_count(area))
+
+    import matplotlib.pyplot as plt
+    plt.plot(distances, spine_counts, '.')
+    plt.show()
+
+
 def synapses_per_neuron(area, source_layer, target_layer):
     """
     Mean inbound connections per neuron. Only excitatory cells are considered, based on the
@@ -372,7 +463,11 @@ def synapses_per_neuron(area, source_layer, target_layer):
             numerator = numerator + n * total_inputs[i]
             denominator = denominator + n
 
-    return numerator / denominator
+    result = numerator / denominator
+
+    # for areas other than V1, scale with spine density
+    ratio = e07.get_spine_count(area) / e07.get_spine_count('V1')
+    return ratio * result
 
 
 def _synapses_per_neuron_V1():
@@ -717,6 +812,7 @@ def _get_triangle_area(a, b, c):
 
 
 yerkes19 = Yerkes19()
+e07 = E07()
 
 
 M14_FV91 = {
@@ -1198,6 +1294,7 @@ def _get_neurons_per_mm2_V2(layer):
 
     return result
 
+
 def get_num_neurons(area, layer):
     """
     Cortical thickness and cell density are negatively correlated in visual cortex in many primate
@@ -1228,6 +1325,7 @@ def get_num_neurons(area, layer):
 
     # We multiply by 0.75 to match fraction excitatory cells; see Hendry et al. (1987) J Neurosci
     return int(0.75 * surface_area * density)
+
 
 def calculate_mean_ascending_SLN():
     """
@@ -1261,6 +1359,7 @@ def calculate_mean_ascending_SLN():
     plt.scatter(d, p)
     plt.title('Not much correlation between %SLN and inter-area distance')
     plt.show()
+
 
 def calculate_flne_vs_distance():
     """
@@ -1312,6 +1411,11 @@ def calculate_flne_vs_distance():
 
 
 if __name__ == '__main__':
+    # synapses_per_neuron('MT', '4', '2/3')
+    plot_spine_count_estimates()
+
+    # get_centre(self, area):
+
     # data = OC82_thickness_V1
     # total = 0
     # for key in data.keys():
@@ -1375,7 +1479,14 @@ if __name__ == '__main__':
     # print(y19.get_surface_area('V2'))
     # print(y19.get_surface_area('MT'))
     #
+    # print(get_layers('V1'))
     # print(get_num_neurons('V1', '2/3'))
+    # print(get_num_neurons('V1', '3B'))
+    # print(get_num_neurons('V1', '4A'))
+    # print(get_num_neurons('V1', '4B'))
+    # print(get_num_neurons('V1', '4Calpha'))
+    # print(get_num_neurons('V1', '4Cbeta'))
+    # print(get_num_neurons('V1', '5'))
     # print(get_num_neurons('V2', '2/3'))
     #
     # print(get_areas())
@@ -1437,7 +1548,7 @@ if __name__ == '__main__':
 
     # calculate_mean_ascending_SLN()
 
-    calculate_flne_vs_distance()
+    # calculate_flne_vs_distance()
 
     # m = Markov()
     # target = 'V3'
