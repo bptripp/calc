@@ -80,6 +80,7 @@ class NetworkVariables:
         # supporting information ...
         self.input_layers = [] #for each layer, a list of indices of layers that provide its input
         self.input_connections = [] # for each layer, a list of indices of connections that provide input
+        self.output_connections = [] # for each layer, a list of indices of connections that carry output
         self.pres = [] # for each connection, index of presynaptic layer
         self.posts = [] # for each connection, index of postsynaptic layer
 
@@ -89,13 +90,17 @@ class NetworkVariables:
 
             input_layers = []
             input_connections = []
+            output_connections = []
             for i in range(len(network.connections)):
                 connection = network.connections[i]
                 if connection.post.name == layer.name:
                     input_layers.append(network.find_layer_index(connection.pre.name))
                     input_connections.append(i)
+                if connection.pre.name == layer.name:
+                    output_connections.append(i)
             self.input_layers.append(input_layers)
             self.input_connections.append(input_connections)
+            self.output_connections.append(output_connections)
 
         def get_min_downstream_w_rf(w_rf, width):
             sigma = w_rf / image_pixel_width * width / network.layers[image_layer].width
@@ -341,6 +346,21 @@ class Cost:
             m_j = self.network.m[self.network.pres[i]]
             terms.append(tf.square(w_ij) * m_i * m_j)
         return tf.constant(kappa) * tf.reduce_mean(terms)
+
+    def dead_end_cost(self, kappa):
+        """
+        TODO: test
+        :param kappa: weight relative to other costs
+        :return: cost due to under-use or over-use of feature maps in outgoing connections;
+            the premise is that most pyramidal neurons are projection neurons that have a
+            single cortico-cortical connection; we take this to mean that the sum of c over
+            outgoing connections should be about 1
+        """
+        terms = []
+        for i in range(self.network.n_layers):
+            for conn_ind in self.network.output_connections:
+                terms.append(self.network.c[conn_ind])
+        return tf.constant(kappa) * norm_squared_error(1.0, tf.reduce_sum(terms))
 
     def constraint_cost(self, kappa):
         """
