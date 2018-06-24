@@ -44,6 +44,22 @@ areas_FV91 = ['V1', 'V2', 'VP', 'V3', 'V3A', 'MT', 'V4t', 'V4', 'VOT', 'MSTd', '
 
 
 class InterAreaConnections:
+    """
+    Provides data on connections between cortical areas, from retrograde tracer injections.
+    This includes for each area that provides input to an injected area, the fraction of
+    the total labelled neurons extrinsic to injection site (FLNe) and % of source neurons
+    in supragranular layers (%SLN).
+
+    The data sources are CoCoMac 2.0 and Markov et al. (2014). Markov et al. provide FLNe and
+    %SLN for inputs to 29 injection sites using the M132 parcellation. Following Schmidt et al.
+    (2018), we attempt to translate this dataset into the FV91 parcellation. We use FV91
+    areas in which each injection was located (mapped by Schmidt et al.) Also following Schmidt,
+    we convert sources from M132 to FV91 using overlap fractions of areas in each parcellation
+    mapped to the F99 cortical surface. The overlap fractions are available from CoCoMac.
+
+    We use trends in the data to fill in missing values for areas not injected by Markov et al.
+    We only consider connections that are identified in CoCoMac 2.0.
+    """
     def __init__(self, cocomac=None, markov=None):
         if not cocomac:
             cocomac = CoCoMac()
@@ -55,17 +71,30 @@ class InterAreaConnections:
         self.areas = areas_FV91
 
     def get_connectivity_grid(self):
+        """
+        :return: A square matrix of connectivity between FV91 visual areas, with ones
+            for connections that exist in CoCoMac 2.0 and zeros elsewhere. Target areas
+            are in rows and sources are in columns.
+        """
         n = len(self.areas)
         grid = np.zeros((n, n))
         for i in range(n):
             for source in self.cocomac.get_source_areas(self.areas[i]):
                 if source in self.areas:
-                    ind = self.areas.index(source)
-                    grid[i,ind] = 1
+                    grid[i,self.areas.index(source)] = 1
         return grid
 
     def get_interpolated_FLNe(self):
-        remapped_FLNe = self.get_remapped_FLNe()
+        """
+        :return: FLNe grid for FV91 visual areas. For areas injected by Markov et al.,
+            FLNe is estimated according to fraction overlap between M132 areas (used by
+            Markov et al.) and FV91 areas (used here). For other areas, we interpolate
+            based on inter-area distances through white matter. The distances are
+            provided by Schmidt et al.
+        """
+        remapped_FLNe = self.get_remapped_FLNe() #data from Markov, mapped onto FV91 areas
+
+        # calculate curve fit to estimate connections to areas not injected by Markov et al.
         logFLNe = np.log10(remapped_FLNe).flatten()
         dist = np.array(S18_distance).flatten()
         ind = np.where(np.logical_and(dist > 0, np.isfinite(logFLNe)))
@@ -74,8 +103,9 @@ class InterAreaConnections:
         coeffs = np.polyfit(dist, logFLNe, 1)
 
         grid = self.get_connectivity_grid()
+
         interpolated_FLNe = np.exp(coeffs[1] + coeffs[0] * np.array(S18_distance))
-        interpolated_FLNe = np.multiply(interpolated_FLNe, grid)
+        # interpolated_FLNe = np.multiply(interpolated_FLNe, grid)
 
         remapped_rows = np.isfinite(np.sum(remapped_FLNe, axis=1))
         remapped_totals = np.zeros(remapped_rows.shape)
@@ -95,6 +125,11 @@ class InterAreaConnections:
         return interpolated_FLNe
 
     def get_remapped_FLNe(self):
+        """
+        :return: FLNe grid for FV91 areas, including only areas injected by Markov et al. They report
+            FLNe for the M132 parcellation, but here we attempt to map onto FV91 according to degree
+            overlap from CoCoMac.
+        """
         n = len(self.areas)
         grid = np.zeros((n, n))
         for i in range(n):
@@ -120,16 +155,28 @@ class InterAreaConnections:
         return result
 
     def get_M132_FLNe(self, target):
+        """
+        :param target: A M132 area
+        :return: a dictionary with M132 connected areas as keys and FLNe as values
+        """
         result = dict()
         for source in self.markov.get_sources(target):
             result[source] = self.markov.get_FLNe(source, target)
         return result
 
     def get_interpolated_SLN(self):
+        """
+        :return: SLN grid for FV91 visual areas. For areas injected by Markov et al.,
+            SLN is estimated according to fraction overlap between M132 areas (used by
+            Markov et al.) and FV91 areas (used here). For other areas, we estimate
+            (following Schmidt et al.) based on ratio of neuron densities in each area.
+        """
+
         remapped_SLN = self.get_remapped_SLN()
+
+        # find curve fit to extrapolate to non-injected areas
         density_log_ratios = []
         SLNs = []
-
         n = len(areas_FV91)
         density_ratios = self._get_density_ratio_grid(interpolate=False)
         for i in range(n):
@@ -138,7 +185,6 @@ class InterAreaConnections:
                     log_ratio = np.log(density_ratios[i,j])
                     density_log_ratios.append(log_ratio)
                     SLNs.append(remapped_SLN[i, j])
-
         popt, pcov = curve_fit(sigmoid, density_log_ratios, np.array(SLNs)/100, p0=[0, -1])
 
         grid = self.get_connectivity_grid()
@@ -151,7 +197,6 @@ class InterAreaConnections:
         # plt.plot(x, 100*sigmoid(x, popt[0], popt[1]))
         # plt.show()
 
-        remapped_rows = np.isfinite(np.sum(remapped_SLN, axis=1))
         for i in range(n):
             if self.get_M132_injection_sites(self.areas[i]):
                 interpolated_SLN[i,:] = remapped_SLN[i,:]
@@ -194,22 +239,12 @@ class InterAreaConnections:
 
         return result
 
-    # def _get_interpolated_density(self, area_FV91):
-    #     """
-    #     :param area_FV91: a FV91 area
-    #     :return: neurons/mm^3 if available, otherwise piecewise fit to distance from V1 (constant
-    #         for >30mm; linear fit for closer areas)
-    #     """
-    #     result = self._get_density(area_FV91)
-    #     if result is None:
-    #         distance_from_V1 = S18_distance[0][areas_FV91.index(area_FV91)]
-    #         if distance_from_V1 > 30:
-    #             result = 39727.5
-    #         else:
-    #             result = 152728.28141914 - 3796.74396312*distance_from_V1
-    #     return result
-
     def get_remapped_SLN(self):
+        """
+        :return: SLN grid for FV91 areas, including only areas injected by Markov et al. They report
+            SLN for the M132 parcellation, but here we attempt to map onto FV91 according to degree
+            overlap from CoCoMac.
+        """
         n = len(self.areas)
         grid = np.zeros((n, n))
         for i in range(n):
@@ -223,7 +258,13 @@ class InterAreaConnections:
         return grid
 
     def map_SLN_M132_to_FV91(self, target_M132, M132_SLN):
-        # implementation of equation from pg 1416 of Schmidt et al. (2018)
+        """
+        This implements the equation on pg 1416 of Schmidt et al. (2018).
+
+        :param M132_SLN: result of get_M132_SLN() for a certain target area
+        :param M132_target: the target area
+        :return: list of SLN for each area in areas_FV91
+        """
         numerator = np.zeros(len(areas_FV91))
         denominator = np.zeros(len(areas_FV91))
         for source_M132 in M132_SLN.keys():
@@ -249,6 +290,11 @@ class InterAreaConnections:
         return fractions
 
     def get_M132_injection_sites(self, FV91_area):
+        """
+        :param FV91_area: An area in the FV91 parcellation
+        :return: M132 areas of injection sites in Markov et al. that fall in the FV91_area
+            (from Schmidt et al.)
+        """
         result = []
         for key in S18_injection_site_mappings.keys():
             if S18_injection_site_mappings[key] == FV91_area:
@@ -256,6 +302,10 @@ class InterAreaConnections:
         return result
 
     def get_M132_SLN(self, target):
+        """
+        :param target: A M132 area
+        :return: a dictionary with M132 connected areas as keys and %SLN as values
+        """
         result = dict()
         for source in self.markov.get_sources(target):
             result[source] = self.markov.get_SLN(source, target)
@@ -263,6 +313,15 @@ class InterAreaConnections:
 
 
 def sigmoid(x, centre, gain):
+    """
+    A sigmoid function, which we use to fit SLN data as a function of log-ratio
+    of neuron densities.
+
+    :param x: value(s) of independent variable
+    :param centre: value at which the result is 0.5
+    :param gain: linearly related to the slope at the centre
+    :return: sigmoid function of x with parameters centre and gain
+    """
     return 1 / (1 + np.exp(-gain*(x-centre)))
 
 
@@ -1933,25 +1992,9 @@ if __name__ == '__main__':
     # plt.plot([30, 60], [np.mean(densities[far_V1]), np.mean(densities[far_V1])])
     # plt.show()
 
-    SLN = iac.get_interpolated_SLN()
-    fig, ax = plt.subplots()
-    im = ax.imshow(SLN, vmin=0, vmax=100)
-    ax.set_xticks(np.arange(len(data.get_areas())))
-    ax.set_yticks(np.arange(len(data.get_areas())))
-    ax.set_xticklabels(data.get_areas(), fontsize=7)
-    ax.set_yticklabels(data.get_areas(), fontsize=7)
-    plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
-             rotation_mode="anchor")
-    cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
-    cbar.ax.set_ylabel(r'SLN', rotation=-90, va="bottom", fontsize=8)
-    cbar.ax.tick_params(labelsize=8)
-    plt.xlabel('Source area')
-    plt.ylabel('Target area')
-    plt.show()
-
-    # FLNe = iac.get_interpolated_FLNe()
+    # SLN = iac.get_interpolated_SLN()
     # fig, ax = plt.subplots()
-    # im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
+    # im = ax.imshow(SLN, vmin=0, vmax=100)
     # ax.set_xticks(np.arange(len(data.get_areas())))
     # ax.set_yticks(np.arange(len(data.get_areas())))
     # ax.set_xticklabels(data.get_areas(), fontsize=7)
@@ -1959,11 +2002,27 @@ if __name__ == '__main__':
     # plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
     #          rotation_mode="anchor")
     # cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
-    # cbar.ax.set_ylabel(r'log$_{10}$(FLNe)', rotation=-90, va="bottom", fontsize=8)
+    # cbar.ax.set_ylabel(r'SLN', rotation=-90, va="bottom", fontsize=8)
     # cbar.ax.tick_params(labelsize=8)
     # plt.xlabel('Source area')
     # plt.ylabel('Target area')
     # plt.show()
+
+    FLNe = iac.get_interpolated_FLNe()
+    fig, ax = plt.subplots()
+    im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
+    ax.set_xticks(np.arange(len(data.get_areas())))
+    ax.set_yticks(np.arange(len(data.get_areas())))
+    ax.set_xticklabels(data.get_areas(), fontsize=7)
+    ax.set_yticklabels(data.get_areas(), fontsize=7)
+    plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
+             rotation_mode="anchor")
+    cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
+    cbar.ax.set_ylabel(r'log$_{10}$(FLNe)', rotation=-90, va="bottom", fontsize=8)
+    cbar.ax.tick_params(labelsize=8)
+    plt.xlabel('Source area')
+    plt.ylabel('Target area')
+    plt.show()
 
     # logFLNe = np.log10(FLNe).flatten()
     # dist = np.array(S18_distance).flatten()
