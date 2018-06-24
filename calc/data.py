@@ -5,6 +5,7 @@ import numpy as np
 import xml.etree.ElementTree as ET
 import csv
 import json
+from scipy.optimize import curve_fit
 
 class Data:
     def __init__(self):
@@ -73,7 +74,6 @@ class InterAreaConnections:
         coeffs = np.polyfit(dist, logFLNe, 1)
 
         grid = self.get_connectivity_grid()
-        # inferred_FLNe = np.multiply(grid, coeffs[1] + coeffs[0] * np.array(S18_distance))
         interpolated_FLNe = np.exp(coeffs[1] + coeffs[0] * np.array(S18_distance))
         interpolated_FLNe = np.multiply(interpolated_FLNe, grid)
 
@@ -102,7 +102,6 @@ class InterAreaConnections:
             mapped = []
             for j in range(len(sites)):
                 M132_FLNe = self.get_M132_FLNe(sites[j])
-                print(M132_FLNe)
                 mapped.append(self.map_FLNe_M132_to_FV91(M132_FLNe))
             grid[i,:] = np.mean(mapped, axis=0)
             grid[i,i] = 0
@@ -114,20 +113,10 @@ class InterAreaConnections:
         :return: list of FLNe for each area in areas_FV91
         """
         result = np.zeros(len(areas_FV91))
-        for area_M132 in M132_FLNe.keys():
-            map = self.cocomac.get_M132_to_FV91(area_M132)
-            if map:
-                for area_FV91 in map.keys():
-                    if area_FV91 in areas_FV91:
-                        ind = areas_FV91.index(area_FV91)
-                        result[ind] += map[area_FV91] / 100 * M132_FLNe[area_M132]
-        return result
-
-    def get_M132_injection_sites(self, FV91_area):
-        result = []
-        for key in S18_injection_site_mappings.keys():
-            if S18_injection_site_mappings[key] == FV91_area:
-                result.append(key)
+        for source_M132 in M132_FLNe.keys():
+            FLNe = M132_FLNe[source_M132]
+            fractions = self._get_overlap_fractions(source_M132)
+            result += FLNe * fractions
         return result
 
     def get_M132_FLNe(self, target):
@@ -136,6 +125,145 @@ class InterAreaConnections:
             result[source] = self.markov.get_FLNe(source, target)
         return result
 
+    def get_interpolated_SLN(self):
+        remapped_SLN = self.get_remapped_SLN()
+        density_log_ratios = []
+        SLNs = []
+
+        n = len(areas_FV91)
+        density_ratios = self._get_density_ratio_grid(interpolate=False)
+        for i in range(n):
+            for j in range(n):
+                if np.isfinite(density_ratios[i,j]) and remapped_SLN[i,j] > 0:
+                    log_ratio = np.log(density_ratios[i,j])
+                    density_log_ratios.append(log_ratio)
+                    SLNs.append(remapped_SLN[i, j])
+
+        popt, pcov = curve_fit(sigmoid, density_log_ratios, np.array(SLNs)/100, p0=[0, -1])
+
+        grid = self.get_connectivity_grid()
+        density_ratios = self._get_density_ratio_grid(interpolate=True)
+        interpolated_SLN = 100*sigmoid(np.log(density_ratios), popt[0], popt[1])
+
+        # plt.scatter(np.log(density_ratios.flatten()), interpolated_SLN.flatten())
+        # plt.scatter(density_log_ratios, SLNs)
+        # x = np.linspace(-2, 2, 20)
+        # plt.plot(x, 100*sigmoid(x, popt[0], popt[1]))
+        # plt.show()
+
+        remapped_rows = np.isfinite(np.sum(remapped_SLN, axis=1))
+        for i in range(n):
+            if self.get_M132_injection_sites(self.areas[i]):
+                interpolated_SLN[i,:] = remapped_SLN[i,:]
+
+        result = np.multiply(interpolated_SLN, grid)
+        result[np.where(result == 0)] = np.nan
+        return result
+
+    def _get_density_ratio_grid(self, interpolate=False):
+        n = len(areas_FV91)
+
+        result = np.nan * np.zeros((n,n))
+        for i in range(n):
+            density_i = self._get_density(areas_FV91[i], interpolate=interpolate)
+            for j in range(n):
+                density_j = self._get_density(areas_FV91[j], interpolate=interpolate)
+                if density_i and density_j:
+                    result[i,j] = density_i / density_j
+
+        return result
+
+    def _get_density(self, area_FV91, interpolate=False):
+        """
+        :param area_FV91: a FV91 area
+        :param interpolate (False): if True, fit missing results as a function of distance
+            from V1 (constant for >30mm; linear fit for closer areas)
+        :return: neurons/mm^3 if available, otherwise None or an estimate if interpolate=True
+        """
+        result = None
+
+        if area_FV91 in S18_density.keys():
+            result = S18_density[area_FV91][1]
+
+        if interpolate and result is None:
+            distance_from_V1 = S18_distance[0][areas_FV91.index(area_FV91)]
+            if distance_from_V1 > 30:
+                result = 39727.5
+            else:
+                result = 152728.28141914 - 3796.74396312*distance_from_V1
+
+        return result
+
+    # def _get_interpolated_density(self, area_FV91):
+    #     """
+    #     :param area_FV91: a FV91 area
+    #     :return: neurons/mm^3 if available, otherwise piecewise fit to distance from V1 (constant
+    #         for >30mm; linear fit for closer areas)
+    #     """
+    #     result = self._get_density(area_FV91)
+    #     if result is None:
+    #         distance_from_V1 = S18_distance[0][areas_FV91.index(area_FV91)]
+    #         if distance_from_V1 > 30:
+    #             result = 39727.5
+    #         else:
+    #             result = 152728.28141914 - 3796.74396312*distance_from_V1
+    #     return result
+
+    def get_remapped_SLN(self):
+        n = len(self.areas)
+        grid = np.zeros((n, n))
+        for i in range(n):
+            sites = self.get_M132_injection_sites(self.areas[i])
+            mapped = []
+            for j in range(len(sites)):
+                M132_SLN = self.get_M132_SLN(sites[j])
+                mapped.append(self.map_SLN_M132_to_FV91(sites[j], M132_SLN))
+            grid[i,:] = np.mean(mapped, axis=0)
+            grid[i,i] = 0
+        return grid
+
+    def map_SLN_M132_to_FV91(self, target_M132, M132_SLN):
+        # implementation of equation from pg 1416 of Schmidt et al. (2018)
+        numerator = np.zeros(len(areas_FV91))
+        denominator = np.zeros(len(areas_FV91))
+        for source_M132 in M132_SLN.keys():
+            FLNe = self.markov.get_FLNe(source_M132, target_M132)
+            SLN = M132_SLN[source_M132]
+            fractions = self._get_overlap_fractions(source_M132)
+            numerator += FLNe * SLN * fractions
+            denominator += FLNe * fractions
+        return np.divide(numerator, denominator)
+
+    def _get_overlap_fractions(self, area_M132):
+        """
+        :param area_M132: A M132 area
+        :return: fraction overlap between given M132 area and each FV91 area (in order of areas_FV91)
+        """
+        fractions = np.zeros(len(areas_FV91))
+        percents = self.cocomac.get_M132_to_FV91(area_M132)
+        if percents:
+            for area_FV91 in percents.keys():
+                if area_FV91 in areas_FV91:
+                    ind = areas_FV91.index(area_FV91)
+                    fractions[ind] += percents[area_FV91] / 100
+        return fractions
+
+    def get_M132_injection_sites(self, FV91_area):
+        result = []
+        for key in S18_injection_site_mappings.keys():
+            if S18_injection_site_mappings[key] == FV91_area:
+                result.append(key)
+        return result
+
+    def get_M132_SLN(self, target):
+        result = dict()
+        for source in self.markov.get_sources(target):
+            result[source] = self.markov.get_SLN(source, target)
+        return result
+
+
+def sigmoid(x, centre, gain):
+    return 1 / (1 + np.exp(-gain*(x-centre)))
 
 
 """ 
@@ -305,6 +433,45 @@ S18_distance = [
     [30.8,26.3,19.9,27.5,25.1,17.1,18.9,22.6,18.1,20.6,22.4,26.2,29.4,28.2,31.4,24.9,28.2,18.1,19.2,15.8,18.3,17.2,39.8,9.7,18.5,14.6,27.6,23.3,20.7,44.6,21.8,0]
 ]
 
+# Structural type, neurons/mm^2, and total thickness.
+# From Hilgetag et al. (2016) with area mappings suggested by Schmidt et al. (2018)
+# Hilgetag Claus C., et al. "The primate connectome in context: principles of connections
+# of the cortical visual system." NeuroImage 134 (2016): 685-702,
+S18_density = {
+    'V1': [8, 161365,1.24],
+    'V2': [7,97619,1.46],
+    'V3': [7,None,None],
+    'VP': [7,None,None],
+    'V4': [6,71237,1.89],
+    'MT': [6,65992,1.96],
+    'VOT': [6,63271,2.13],
+    'PITd': [6,63271,2.13],
+    'PITv': [6,63271,2.13],
+    'V3A': [6,61382,1.66],
+    'V4t': [6,None,None], #
+    'LIP': [5,(53706+45237)/2,2.3],
+    'DP': [5,48015,2.06],
+    'TF': [5,46084,1.62],
+    'FEF': [5,44978,2.21],
+    'CIT': [5,None,None],
+    'MSTd': [5,None,None],
+    'MSTl': [5,None,None],
+    'PIP': [5,None,None],
+    'PITd': [5,None,None],
+    'PITv': [5,None,None],
+    'PO': [5,None,None],
+    'VIP': [5,None,None],
+    'AITd': [4,38840,2.63],
+    'AITv': [4,38840,2.63],
+    'CITd': [4,38840,2.63],
+    'CITv': [4,38840,2.63],
+    '46': [4,38027,1.86],
+    '7a': [4,36230,2.68],
+    'FST': [4,None,None],
+    'STPa': [4,None,None],
+    'STPp': [4,None,None],
+    'TH': [2,33196,1.87],
+}
 
 """
 Account for spine density vs hierarchy as in: 
@@ -1736,10 +1903,39 @@ if __name__ == '__main__':
     data = Data()
     iac = InterAreaConnections()
 
-    FLNe = iac.get_interpolated_FLNe()
+    # densities = []
+    # distances = []
+    # for i in range(len(areas_FV91)):
+    #     density = iac._get_density(areas_FV91[i])
+    #     if density:
+    #         densities.append(density)
+    #         distances.append(S18_distance[0][i])
+    #
+    # interpolated_distances = []
+    # interpolated_densities = []
+    # for i in range(len(areas_FV91)):
+    #     interpolated_densities.append(iac._get_interpolated_density(areas_FV91[i]))
+    #     interpolated_distances.append(S18_distance[0][i])
+    #
+    # densities = np.array(densities)
+    # distances = np.array(distances)
+    # near_V1 = np.where(distances <= 35)
+    # far_V1 = np.where(distances > 35)
+    #
+    # near_coeffs = np.polyfit(distances[near_V1], densities[near_V1], 1)
+    # far_coeffs = np.polyfit(distances[far_V1], densities[far_V1], 1)
+    # plt.scatter(interpolated_distances, interpolated_densities)
+    # plt.scatter(distances, densities)
+    # print(near_coeffs)
+    # print(far_coeffs)
+    # print(np.mean(densities[far_V1]))
+    # plt.plot([0, 30], near_coeffs[1] + [0, near_coeffs[0]*30], 'r')
+    # plt.plot([30, 60], [np.mean(densities[far_V1]), np.mean(densities[far_V1])])
+    # plt.show()
 
+    SLN = iac.get_interpolated_SLN()
     fig, ax = plt.subplots()
-    im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
+    im = ax.imshow(SLN, vmin=0, vmax=100)
     ax.set_xticks(np.arange(len(data.get_areas())))
     ax.set_yticks(np.arange(len(data.get_areas())))
     ax.set_xticklabels(data.get_areas(), fontsize=7)
@@ -1747,10 +1943,27 @@ if __name__ == '__main__':
     plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
              rotation_mode="anchor")
     cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
-    cbar.ax.set_ylabel(r'log$_{10}$(FLNe)', rotation=-90, va="bottom", fontsize=8)
+    cbar.ax.set_ylabel(r'SLN', rotation=-90, va="bottom", fontsize=8)
     cbar.ax.tick_params(labelsize=8)
-
+    plt.xlabel('Source area')
+    plt.ylabel('Target area')
     plt.show()
+
+    # FLNe = iac.get_interpolated_FLNe()
+    # fig, ax = plt.subplots()
+    # im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
+    # ax.set_xticks(np.arange(len(data.get_areas())))
+    # ax.set_yticks(np.arange(len(data.get_areas())))
+    # ax.set_xticklabels(data.get_areas(), fontsize=7)
+    # ax.set_yticklabels(data.get_areas(), fontsize=7)
+    # plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
+    #          rotation_mode="anchor")
+    # cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
+    # cbar.ax.set_ylabel(r'log$_{10}$(FLNe)', rotation=-90, va="bottom", fontsize=8)
+    # cbar.ax.tick_params(labelsize=8)
+    # plt.xlabel('Source area')
+    # plt.ylabel('Target area')
+    # plt.show()
 
     # logFLNe = np.log10(FLNe).flatten()
     # dist = np.array(S18_distance).flatten()
