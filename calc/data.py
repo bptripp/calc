@@ -9,32 +9,83 @@ from scipy.optimize import curve_fit
 
 class Data:
     def __init__(self):
-        self.cocomac = CoCoMac()
-        self.markov = Markov()
+        iac = InterAreaConnections()
+        self.FLNe = iac.get_interpolated_FLNe()
+        self.SLN = iac.get_interpolated_SLN()
+
+        histogram = np.array(FS09_synapses_per_connection)
+        self.synapses_per_connection = np.dot(histogram[:,0], histogram[:,1]) / np.sum(histogram[:,1])
 
     def get_areas(self):
+        """
+        :return: List of visual cortical areas in the FV91 parcellation.
+        """
         return areas_FV91
 
     def get_layers(self, area):
+        """
+        :param area: A visual area
+        :return: List of layers in that area, e.g. '1', '2/3', etc.; these are fairly
+             but not completely consistent across visual areas
+        """
         return get_layers(area)
 
     def get_num_neurons(self, area, layer):
-        return get_num_neurons(area, layer)
+        """
+        :param area: A visual area
+        :param layer: Cortical layer
+        :return: Estimated number of excitatory neurons in the given area/layer per hemisphere; we
+            assume convolutional units are similar to inhibitory neurons based on Parisien et al. (2008).
+        """
+        mm2 = S18_surface_area[area]
+
+        if area == 'V1':
+            neurons_per_mm2 = _get_neurons_per_mm2_V1(layer)
+        else:
+            total_neurons_per_mm2 = S18_density[area][1]
+            layer_index = ['1', '2/3', '4', '5', '6'].index(layer)
+            fraction = S18_thickness[area][layer_index] / S18_thickness[area][-1]
+            neurons_per_mm2 = fraction * total_neurons_per_mm2
+
+        # We multiply by 0.75 to match fraction excitatory cells; see Hendry et al. (1987) J Neurosci
+        return int(0.75 * mm2 * neurons_per_mm2)
 
     def get_receptive_field_size(self, area):
+        """
+        :param area: A visual area
+        :return: RF width at 5 degrees eccentricity, if available, otherwise None
+        """
         return get_RF_size(area)
 
     def get_inputs_per_neuron(self, area, source_layer, target_layer):
-        pass
+        """
+        :param area: A visual area
+        :param source_layer: A cortical layer; source of an inter-laminar connection
+        :param target_layer: Another cortical layer; target of same inter-laminar connection
+        :return: Number of inputs in this connection per post-synaptic neuron
+        """
+        spn = synapses_per_neuron(area, source_layer, target_layer)
+        return spn / self.synapses_per_connection
 
     def get_extrinsic_inputs(self, area, target_layer):
-        pass
+        """
+        :param area: A visual area
+        :param target_layer: A cortical layer
+        :return: Number of inputs per neuron from other cortical areas
+        """
+        #TODO: account for repeated synapses
+        spn = synapses_per_neuron(area, 'extrinsic', target_layer)
+        return spn / self.synapses_per_connection
 
     def get_FLNe(self, source_area, target_area):
-        pass
+        source_index = areas_FV91.index(source_area)
+        target_index = areas_FV91.index(target_area)
+        return self.FLNe[target_index, source_index]
 
     def get_SLN(self, source_area, target_area):
-        pass
+        source_index = areas_FV91.index(source_area)
+        target_index = areas_FV91.index(target_area)
+        return self.SLN[target_index, source_index]
 
 
 areas_M132 = ['???', '1', '2', '3', '5', '9', '10', '11', '12', '13', '14', '23', '25', '31', '32', '44', '24a', '24b', '24c', '24d', '29/30', '45A', '45B', '46d', '46v', '7A', '7B', '7m', '7op', '8B', '8l', '8m', '8r', '9/46d', '9/46v', 'AIP', 'CORE', 'DP', 'ENTORHINAL', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'FST', 'Gu', 'INSULA', 'IPa', 'LB', 'LIP', 'MB', 'MIP', 'MST', 'MT', 'OPAI', 'OPRO', 'Parainsula', 'PBc', 'PBr', 'PERIRHINAL', 'PGa', 'PIP', 'PIRIFORM', 'ProM', 'Pro.St', 'SII', 'STPc', 'STPi', 'STPr', 'SUBICULUM', 'TEad', 'TEa/ma', 'TEa/mp', 'TEav', 'TEMPORAL_POLE', 'TEO', 'TEOm', 'TEpd', 'TEpv', 'TH/TF', 'TPt', 'V1', 'V2', 'V3', 'V3A', 'V4', 'V4t', 'V6', 'V6A', 'VIP']
@@ -330,6 +381,11 @@ Data from M. Schmidt, R. Bakker, C. C. Hilgetag, M. Diesmann, and S. J. van Alba
 macaque visual cortex,” Brain Struct. Funct., vol. 223, no. 3, pp. 1409–1435, 2018.
 """
 
+# (intrinsic, extrinsic) for (2/3E, 2/3I, 4E, 4I, 5E, 5I, 6E, 6I)
+#TODO: use Binzegger's numbers for V1 but scale total layer-wise by Schmidt's layer-wise in-degree
+#TODO: Schmidt's estimate based on layer-specific synapse densitites and layer thicknesses
+#TODO: but is this table by layer in which synapse occurs or layer of cell body? L1 missing so must be latter
+
 S18_in_degree = {
     'V1': [3550.00,1246.00,2885.00,1246.00,1975.00,1246.00,2860.00,1246.00,4100.00,1246.00,1632.00,1246.00,2008.00,1246.00,1644.00,1246.00],
     'V2': [3608.00,1848.00,3853.00,1848.00,3413.00,1848.00,4819.00,1848.00,5669.00,1848.00,3124.00,1848.00,4596.00,1848.00,3511.00,1848.00],
@@ -401,7 +457,7 @@ S18_thickness = {
 }
 
 S18_surface_area = {
-    'V1': 1484.63,
+    'V1': 1484.63, #TODO: this doesn't match FV91
     'V3': 120.57,
     'PO': 75.37,
     'V2': 1193.40,
@@ -589,6 +645,34 @@ J. Neurocytol., vol. 31, no. 3–5 SPEC. ISS., pp. 317–335, 2002.
 
 def data_folder():
     return os.path.dirname(inspect.stack()[0][1]) + '/data_files'
+
+
+# Histograms of synpapses per functional connection in rat barrel cortex. We average over three
+# connections. From:
+#
+# T. Fares and A. Stepanyants, “Cooperative synapse formation in the neocortex.,”
+# Proc. Natl. Acad. Sci. U. S. A., vol. 106, no. 38, pp. 16463–16468, 2009.
+#
+# Note this non-independent synapse formation is qualitatively consistent with:
+#
+# N. Kasthuri, K. J. Hayworth, D. R. Berger, R. L. Schalek, J. A. Conchello,
+# S. Knowles-Barley, D. Lee, A. Vázquez-Reina, V. Kaynig, T. R. Jones, M. Roberts,
+# J. L. Morgan, J. C. Tapia, H. S. Seung, W. G. Roncal, J. T. Vogelstein, R. Burns,
+# D. L. Sussman, C. E. Priebe, H. Pfister, and J. W. Lichtman, “Saturated Reconstruction
+# of a Volume of Neocortex,” Cell, vol. 162, no. 3, pp. 648–661, 2015.
+FS09_synapses_per_connection = [
+    [4, 0.5385996409335727], # L4->L2/3
+    [5, 0.4631956912028726],
+    [4, 0.10626118067978559], # L5->L5
+    [5, 0.4754919499105546],
+    [6, 0.21037567084078707],
+    [7, 0.15885509838998244],
+    [8, 0.05259391771019685],
+    [2, 0.18107142857142855], # L4->L4
+    [3, 0.4553571428571429],
+    [4, 0.18214285714285722],
+    [5, 0.18214285714285705]
+]
 
 
 # Sincich, L. C., Adams, D. L., & Horton, J. C. (2003). Complete flatmounting of the macaque cerebral
@@ -952,6 +1036,21 @@ def synapses_per_neuron(area, source_layer, target_layer):
     Inputs to excitatory cells are averaged over excitatory cell types, weighted by numbers
     of each cell type.
 
+    The numbers are based on potential (geometric) connections in cat V1, from:
+
+    T. Binzegger, R. J. Douglas, and K. A. C. Martin, “A quantitative map of the circuit of cat
+    primary visual cortex,” J. Neurosci., vol. 24, no. 39, pp. 8441–8453, 2004.
+
+    Regarding similarity of inter-laminar structure between cat and macaque V1, see:
+
+    E. M. Callaway, “Local Circuits in Primary Visual Cortex of the Macaque Monkey,”
+    Annu. Rev. Neurosci., vol. 21, no. 1, pp. 47–74, 1998.
+
+    Regarding support for random contact (but not functional connectivity) based on geometry see:
+
+    N. Kalisman, G. Silberberg, and H. Markram, “The neocortical microcircuit as a tabula
+    rasa,” Proc. Natl. Acad. Sci., vol. 102, no. 3, pp. 880–885, 2005.
+
     :param area: cortical area (e.g. 'V1', 'V2')
     :param source_layer: one of '1', '2/3', '4', '5', '6' or 'extrinsic'
     :param target_layer: one of '1', '2/3', '4', '5', '6'
@@ -989,8 +1088,13 @@ def synapses_per_neuron(area, source_layer, target_layer):
 
     result = numerator / denominator
 
-    # for areas other than V1, scale with spine density
-    ratio = e07.get_spine_count(area) / e07.get_spine_count('V1')
+    # # for areas other than V1, scale with spine density
+    # ratio = e07.get_spine_count(area) / e07.get_spine_count('V1')
+    # return ratio * result
+
+    # For areas other than V1, scale by in-degree of target layer estimated by Schmidt et al.
+    col = 2 * ['2/3', '4', '5', '6'].index(target_layer) # column of S18_in_degree for excitatory cells
+    ratio = S18_in_degree[area][col] / S18_in_degree['V1'][col]
     return ratio * result
 
 
@@ -1035,7 +1139,6 @@ def _get_synapses_per_layer_V1(layer):
         to lower mean synapses per neuron in monkey
     """
     monkey_cat_ratio = _synapses_per_neuron_V1() / _synapses_per_neuron_cat_V1()
-    # print(monkey_cat_ratio)
     return monkey_cat_ratio * _get_synapses_per_layer_cat_V1(layer)
 
 
@@ -1209,7 +1312,6 @@ Trends in cognitive sciences, 17(1), 26-49.
 Op De Beeck, H., & Vogels, R. (2000). Spatial sensitivity of macaque inferior temporal neurons. 
 Journal of Comparative Neurology, 426(4), 505-518.
 """
-# TODO: closer look at this
 RF_diameter_5_degrees_eccentricity = {
     'V1': 1.3, # Gattass et al. (1981)
     'V2': 2.2, # Gattass et al. (1981)
@@ -1706,6 +1808,10 @@ def get_areas():
 
 
 def get_layers(area):
+    # Schmidt et al. (2018) say that TH lacks L4 but don't give a reference. However
+    # Felleman & Van Essen (1991) say that several connections to TH terminate on L4
+    # (F pattern in their Table 5).
+
     if area == 'V1':
         return ['1', '2/3', '3B', '4A', '4B', '4Calpha', '4Cbeta', '5', '6']
     else:
@@ -1772,6 +1878,10 @@ def _get_thickness_V2(layer):
     thickness_S = S03_thickness_V2[layer] * total_thickness_V1 / total_thickness_V1_S
 
     return (thickness_BYK + thickness_S) / 2
+
+
+def _get_neurons_per_mm3_V1(layer):
+    pass
 
 
 def _get_neurons_per_mm2_V1(layer):
@@ -1843,6 +1953,7 @@ def _get_neurons_per_mm2_V2(layer):
 
 
 def get_num_neurons(area, layer):
+    #TODO: replace with Schmidt et al.
     """
     Cortical thickness and cell density are negatively correlated in visual cortex in many primate
     species:
