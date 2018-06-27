@@ -12,6 +12,7 @@ class Data:
         iac = InterAreaConnections()
         self.FLNe = iac.get_interpolated_FLNe()
         self.SLN = iac.get_interpolated_SLN()
+        self.connections = iac.get_connectivity_grid()
 
         histogram = np.array(FS09_synapses_per_connection)
         self.synapses_per_connection = np.dot(histogram[:,0], histogram[:,1]) / np.sum(histogram[:,1])
@@ -37,6 +38,8 @@ class Data:
         :return: Estimated number of excitatory neurons in the given area/layer per hemisphere; we
             assume convolutional units are similar to inhibitory neurons based on Parisien et al. (2008).
         """
+        #TODO: account for lack of neurons in L1
+        #TODO: account for varied density across layers
         mm2 = S18_surface_area[area]
 
         if area == 'V1':
@@ -76,6 +79,17 @@ class Data:
         #TODO: account for repeated synapses
         spn = synapses_per_neuron(area, 'extrinsic', target_layer)
         return spn / self.synapses_per_connection
+
+    def get_source_areas(self, target_area, feedforward_only=False):
+        c = self.connections[areas_FV91.index(target_area)]
+
+        result = []
+        for i in range(len(areas_FV91)):
+            if c[i]:
+                source_area = areas_FV91[i]
+                if not feedforward_only or FV91_hierarchy[target_area] > FV91_hierarchy[source_area]:
+                    result.append(source_area)
+        return result
 
     def get_FLNe(self, source_area, target_area):
         source_index = areas_FV91.index(source_area)
@@ -131,7 +145,7 @@ class InterAreaConnections:
         grid = np.zeros((n, n))
         for i in range(n):
             for source in self.cocomac.get_source_areas(self.areas[i]):
-                if source in self.areas:
+                if source in self.areas and source != self.areas[i]:
                     grid[i,self.areas.index(source)] = 1
         return grid
 
@@ -552,39 +566,44 @@ S18_distance = [
 # From Hilgetag et al. (2016) with area mappings suggested by Schmidt et al. (2018)
 # Hilgetag Claus C., et al. "The primate connectome in context: principles of connections
 # of the cortical visual system." NeuroImage 134 (2016): 685-702,
+# Areas marked with "inferred" are not in the dataset, so we use the mean of other areas
+# at the same hierarchical level, following Schmidt et al.
+# Areas marked "manual" were manually assigned type 5 by Schmidt et al.
 S18_density = {
     'V1': [8, 161365,1.24],
     'V2': [7,97619,1.46],
-    'V3': [7,None,None],
-    'VP': [7,None,None],
+    'V3': [7,97619,None], # inferred
+    'VP': [7,97619,None], # inferred
     'V4': [6,71237,1.89],
     'MT': [6,65992,1.96],
     'VOT': [6,63271,2.13],
     'PITd': [6,63271,2.13],
     'PITv': [6,63271,2.13],
     'V3A': [6,61382,1.66],
-    'V4t': [6,None,None], #
+    'V4t': [6,64737,None], # inferred
+    'MIP': [5,47137,None], # manual inferred
+    'MDP': [5,47137,None], # manual inferred
     'LIP': [5,(53706+45237)/2,2.3],
     'DP': [5,48015,2.06],
     'TF': [5,46084,1.62],
     'FEF': [5,44978,2.21],
-    'CIT': [5,None,None],
-    'MSTd': [5,None,None],
-    'MSTl': [5,None,None],
-    'PIP': [5,None,None],
-    'PITd': [5,None,None],
-    'PITv': [5,None,None],
-    'PO': [5,None,None],
-    'VIP': [5,None,None],
+    'CIT': [5,47137,None], # inferred
+    'MSTd': [5,47137,None], # inferred
+    'MSTl': [5,47137,None], # inferred
+    'PIP': [5,47137,None], # inferred
+    'PITd': [5,47137,None], # inferred
+    'PITv': [5,47137,None], # inferred
+    'PO': [5,47137,None], # inferred
+    'VIP': [5,47137,None], # inferred
     'AITd': [4,38840,2.63],
     'AITv': [4,38840,2.63],
     'CITd': [4,38840,2.63],
     'CITv': [4,38840,2.63],
     '46': [4,38027,1.86],
     '7a': [4,36230,2.68],
-    'FST': [4,None,None],
-    'STPa': [4,None,None],
-    'STPp': [4,None,None],
+    'FST': [4,38269,None], # inferred
+    'STPa': [4,38269,None], # inferred
+    'STPp': [4,38269,None], # inferred
     'TH': [2,33196,1.87],
 }
 
@@ -923,7 +942,7 @@ FV91_hierarchy = {
     'V2': 2,
     'V3': 3, 'VP': 3,
     'PIP': 4, 'V3A': 4,
-    'MDP': 5, 'PO': 5, 'MT': 5, 'V4t': 5, 'V4': 5,
+    'MDP': 5, 'MIP': 5, 'PO': 5, 'MT': 5, 'V4t': 5, 'V4': 5,
     'DP': 6, 'VOT': 6,
     'VIP': 7, 'LIP': 7, 'MSTd': 7, 'MSTl': 7, 'FST': 7, 'PITd': 7, 'PITv': 7,
     '7b': 8, '7a': 8, 'FEF': 8, 'STPp': 8, 'CITd': 8, 'CITv': 8,
@@ -1952,37 +1971,37 @@ def _get_neurons_per_mm2_V2(layer):
     return result
 
 
-def get_num_neurons(area, layer):
-    #TODO: replace with Schmidt et al.
-    """
-    Cortical thickness and cell density are negatively correlated in visual cortex in many primate
-    species:
-
-    la Fougère, C., Grant, S., Kostikov, A., Schirrmacher, R., Gravel, P., Schipper, H. M., ... &
-    Thiel, A. (2011). Where in-vivo imaging meets cytoarchitectonics: the relationship between cortical
-    thickness and neuronal density measured with high-resolution [18 F] flumazenil-PET. Neuroimage, 56(3), 951-960.
-
-    Cahalane, D. J., Charvet, C. J., & Finlay, B. L. (2012). Systematic, balancing gradients in neuron density
-    and number across the primate isocortex. Frontiers in neuroanatomy, 6.
-
-    TODO: docs
-    :param area:
-    :param layer:
-    :return:
-
-    """
-    # if yerkes19 is None:
-    #     yerkes19 = Yerkes19()
-
-    surface_area = yerkes19.get_surface_area(area)
-
-    if area == 'V1':
-        density = _get_neurons_per_mm2_V1(layer)
-    else:
-        density = _get_neurons_per_mm2_V2(layer)
-
-    # We multiply by 0.75 to match fraction excitatory cells; see Hendry et al. (1987) J Neurosci
-    return int(0.75 * surface_area * density)
+# def get_num_neurons(area, layer):
+#     #TODO: replace with Schmidt et al.
+#     """
+#     Cortical thickness and cell density are negatively correlated in visual cortex in many primate
+#     species:
+#
+#     la Fougère, C., Grant, S., Kostikov, A., Schirrmacher, R., Gravel, P., Schipper, H. M., ... &
+#     Thiel, A. (2011). Where in-vivo imaging meets cytoarchitectonics: the relationship between cortical
+#     thickness and neuronal density measured with high-resolution [18 F] flumazenil-PET. Neuroimage, 56(3), 951-960.
+#
+#     Cahalane, D. J., Charvet, C. J., & Finlay, B. L. (2012). Systematic, balancing gradients in neuron density
+#     and number across the primate isocortex. Frontiers in neuroanatomy, 6.
+#
+#     TODO: docs
+#     :param area:
+#     :param layer:
+#     :return:
+#
+#     """
+#     # if yerkes19 is None:
+#     #     yerkes19 = Yerkes19()
+#
+#     surface_area = yerkes19.get_surface_area(area)
+#
+#     if area == 'V1':
+#         density = _get_neurons_per_mm2_V1(layer)
+#     else:
+#         density = _get_neurons_per_mm2_V2(layer)
+#
+#     # We multiply by 0.75 to match fraction excitatory cells; see Hendry et al. (1987) J Neurosci
+#     return int(0.75 * surface_area * density)
 
 
 def calculate_mean_ascending_SLN():
@@ -2071,7 +2090,18 @@ def calculate_flne_vs_distance():
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     data = Data()
-    iac = InterAreaConnections()
+
+    # print(data.get_areas())
+    # print(data.get_SLN(data.get_areas()[0], data.get_areas()[1]))
+    # print(data.get_FLNe(data.get_areas()[0], data.get_areas()[1]))
+    # print(data.get_num_neurons(data.get_areas()[1], '2/3'))
+    # print(data.get_layers('V1'))
+    # print(data.get_layers('V2'))
+    # print(data.get_extrinsic_inputs('V2', '4'))
+    # print(data.get_inputs_per_neuron('V2', '4', '2/3'))
+    # print(data.get_inputs_per_neuron('V2', '2/3', '5'))
+    # print(data.get_receptive_field_size('V2'))
+    # print(data.get_source_areas('V2', feedforward_only=True))
 
     # densities = []
     # distances = []
@@ -2103,6 +2133,10 @@ if __name__ == '__main__':
     # plt.plot([30, 60], [np.mean(densities[far_V1]), np.mean(densities[far_V1])])
     # plt.show()
 
+    iac = InterAreaConnections()
+    plt.imshow(iac.get_connectivity_grid())
+    plt.show()
+
     # SLN = iac.get_interpolated_SLN()
     # fig, ax = plt.subplots()
     # im = ax.imshow(SLN, vmin=0, vmax=100)
@@ -2119,21 +2153,21 @@ if __name__ == '__main__':
     # plt.ylabel('Target area')
     # plt.show()
 
-    FLNe = iac.get_interpolated_FLNe()
-    fig, ax = plt.subplots()
-    im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
-    ax.set_xticks(np.arange(len(data.get_areas())))
-    ax.set_yticks(np.arange(len(data.get_areas())))
-    ax.set_xticklabels(data.get_areas(), fontsize=7)
-    ax.set_yticklabels(data.get_areas(), fontsize=7)
-    plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
-             rotation_mode="anchor")
-    cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
-    cbar.ax.set_ylabel(r'log$_{10}$(FLNe)', rotation=-90, va="bottom", fontsize=8)
-    cbar.ax.tick_params(labelsize=8)
-    plt.xlabel('Source area')
-    plt.ylabel('Target area')
-    plt.show()
+    # FLNe = iac.get_interpolated_FLNe()
+    # fig, ax = plt.subplots()
+    # im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
+    # ax.set_xticks(np.arange(len(data.get_areas())))
+    # ax.set_yticks(np.arange(len(data.get_areas())))
+    # ax.set_xticklabels(data.get_areas(), fontsize=7)
+    # ax.set_yticklabels(data.get_areas(), fontsize=7)
+    # plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
+    #          rotation_mode="anchor")
+    # cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
+    # cbar.ax.set_ylabel(r'log$_{10}$(FLNe)', rotation=-90, va="bottom", fontsize=8)
+    # cbar.ax.tick_params(labelsize=8)
+    # plt.xlabel('Source area')
+    # plt.ylabel('Target area')
+    # plt.show()
 
     # logFLNe = np.log10(FLNe).flatten()
     # dist = np.array(S18_distance).flatten()
