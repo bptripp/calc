@@ -981,65 +981,70 @@ class E07:
             '6': ['F3', 'F6']  # see Luppino & Rizzolati (2000)
         }
 
+        self.FV91_mappings = {
+            'TE': ['PITd', 'PITv', 'CITd', 'CITv', 'AITd', 'AITv'],
+            'TEO': ['VOT'],
+            '7': ['7a'],
+            '3b': [],
+            '4': [],
+            '5': [],
+            '6': []
+        }
+
+        self._V1_ind = areas_FV91.index('V1')
         self._fit()
 
     def _fit(self):
-        centre_V1 = yerkes19.get_centre('V1')
+
         distances = []
         spine_counts = []
         for key in self.layer_3_basal_spine_count.keys():
-            if key in yerkes19.areas:
+            if key in areas_FV91:
                 areas = [key]
             else:
-                areas = self.yerkes_mappings[key]
+                areas = self.FV91_mappings[key]
 
-            centres = []
-            for area in areas:
-                centres.append(yerkes19.get_centre(area))
-            distance = np.linalg.norm(centre_V1 - np.mean(centres, axis=0))
-            distances.append(distance)
-            spine_counts.append(self.layer_3_basal_spine_count[key])
+            if areas:
+                distance = np.mean([self.get_distance(area) for area in areas])
+                distances.append(distance)
+                spine_counts.append(self.layer_3_basal_spine_count[key])
 
         p = np.polyfit(distances, spine_counts, 1)
         self.intercept = p[1]
         self.slope = p[0]
 
-        # import matplotlib.pyplot as plt
-        # plt.plot(distances, spine_counts, '.')
-        # plt.plot([0, 50], p[1] + [0, p[0]*50], 'k')
-        # plt.show()
-
     def get_spine_count(self, area):
         if area in self.layer_3_basal_spine_count.keys():
             return self.layer_3_basal_spine_count[area]
         else:
-            for key in self.yerkes_mappings.keys():
-                if area in self.yerkes_mappings[key]:
+            for key in self.FV91_mappings.keys():
+                if area in self.FV91_mappings[key]:
                     return self.layer_3_basal_spine_count[key]
 
-            if area in yerkes19.areas:
-                centre_V1 = yerkes19.get_centre('V1')
-                centre_area = yerkes19.get_centre(area)
-                distance = np.linalg.norm(centre_V1 - centre_area)
-                return self.intercept + self.slope*distance
+            if area in areas_FV91:
+                return self.intercept + self.slope * self.get_distance(area)
             else:
                 return None
 
+    def get_distance(self, area):
+        """
+        :param area: A FV91 area
+        :return: Distance to this area from V1 (mean through white matter)
+        """
+        return S18_distance[self._V1_ind][areas_FV91.index(area)]
 
-def plot_spine_count_estimates():
-    e07 = E07()
-    centre_V1 = yerkes19.get_centre('V1')
-    distances = []
-    spine_counts = []
-    for area in yerkes19.areas:
-        print(area)
-        centre = yerkes19.get_centre(area)
-        distances.append(np.linalg.norm(centre_V1 - centre))
-        spine_counts.append(e07.get_spine_count(area))
+    def plot(self):
+        import matplotlib.pyplot as plt
 
-    import matplotlib.pyplot as plt
-    plt.plot(distances, spine_counts, '.')
-    plt.show()
+        distances = []
+        spine_counts = []
+        for area in areas_FV91:
+            distances.append(self.get_distance(area))
+            spine_counts.append(self.get_spine_count(area))
+
+        plt.plot(distances, spine_counts, '.')
+        plt.plot([0, 65], self.intercept + [0, self.slope*65], 'k')
+        plt.show()
 
 
 def synapses_per_neuron(area, source_layer, target_layer):
@@ -2133,9 +2138,9 @@ if __name__ == '__main__':
     # plt.plot([30, 60], [np.mean(densities[far_V1]), np.mean(densities[far_V1])])
     # plt.show()
 
-    iac = InterAreaConnections()
-    plt.imshow(iac.get_connectivity_grid())
-    plt.show()
+    # iac = InterAreaConnections()
+    # plt.imshow(iac.get_connectivity_grid())
+    # plt.show()
 
     # SLN = iac.get_interpolated_SLN()
     # fig, ax = plt.subplots()
@@ -2192,7 +2197,8 @@ if __name__ == '__main__':
     # print(data.cocomac.get_M132_to_FV91('V1'))
 
     # synapses_per_neuron('MT', '4', '2/3')
-    # plot_spine_count_estimates()
+
+    e07.plot()
 
     # get_centre(self, area):
 
