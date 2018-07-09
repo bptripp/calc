@@ -262,7 +262,7 @@ def get_example_medium():
 
     result = System()
     result.add_input(750000, .02)
-    result.add('LGN', 2000000, 1000, .04)
+    result.add('LGNparvo', 2000000, 1000, .04)
     result.add('V1_4', 53000000, 500, .1)
     result.add('V1_23', 53000000, 1000, .13)
     result.add('V2_4', 33000000, 500, .2)
@@ -271,24 +271,24 @@ def get_example_medium():
     result.add('V4_23', 17000000, 1000, .5)
     result.add('MT_4', 4800000, 500, 1.)
     result.add('MT_23', 4800000, 1000, 1.1)
-    result.add('TEO_4', 6000000, 500, 1.4)
-    result.add('TEO_23', 6000000, 1000, 1.5)
-    result.add('TEpd_4', 5700000, 500, 3.)
-    result.add('TEpd_23', 5700000, 1000, 4.)
+    result.add('VOT_4', 6000000, 500, 1.4)
+    result.add('VOT_23', 6000000, 1000, 1.5)
+    result.add('PITd_4', 5700000, 500, 3.)
+    result.add('PITd_23', 5700000, 1000, 4.)
     result.add('DP_4', 17000000, 500, 1.7)
     result.add('DP_23', 17000000, 1000, 1.8)
 
     # input
-    result.connect_areas('INPUT', 'LGN', 1.)
-    result.connect_areas('LGN', 'V1_4', 1.)
+    result.connect_areas('INPUT', 'LGNparvo', 1.)
+    result.connect_areas('LGNparvo', 'V1_4', 1.)
 
     # laminar connections
     result.connect_areas('V1_4', 'V1_23', 1.)
     result.connect_areas('V2_4', 'V2_23', 1.)
     result.connect_areas('V4_4', 'V4_23', 1.)
     result.connect_areas('MT_4', 'MT_23', 1.)
-    result.connect_areas('TEO_4', 'TEO_23', 1.)
-    result.connect_areas('TEpd_4', 'TEpd_23', 1.)
+    result.connect_areas('VOT_4', 'VOT_23', 1.)
+    result.connect_areas('PITd_4', 'PITd_23', 1.)
     result.connect_areas('DP_4', 'DP_23', 1.)
 
     # feedforward inter-areal connections
@@ -297,17 +297,17 @@ def get_example_medium():
     result.connect_areas('V1_23', 'MT_4', 0.0235)
     result.connect_areas('V2_23', 'V4_4', 0.9693)
     result.connect_areas('V2_23', 'MT_4', 0.2346)
-    result.connect_areas('V2_23', 'TEpd_4', 0.0026)
+    result.connect_areas('V2_23', 'PITd_4', 0.0026)
     result.connect_areas('V2_23', 'DP_4', 0.2400)
     result.connect_areas('V4_23', 'MT_4', 0.7419)
-    result.connect_areas('V4_23', 'TEpd_4', 0.2393)
+    result.connect_areas('V4_23', 'PITd_4', 0.2393)
     result.connect_areas('V4_23', 'DP_4', 0.7591)
-    result.connect_areas('TEO_23', 'TEpd_4', 0.7569)
-    result.connect_areas('TEO_23', 'DP_4', 0.0008)
-    result.connect_areas('MT_23', 'TEpd_4', 0.0004)
-    result.connect_areas('DP_23', 'TEpd_4', 0.0009)
-    result.connect_areas('V2_23', 'TEO_4', 0.0909)
-    result.connect_areas('V4_23', 'TEO_4', 0.9091)
+    result.connect_areas('VOT_23', 'PITd_4', 0.7569)
+    result.connect_areas('VOT_23', 'DP_4', 0.0008)
+    result.connect_areas('MT_23', 'PITd_4', 0.0004)
+    result.connect_areas('DP_23', 'PITd_4', 0.0009)
+    result.connect_areas('V2_23', 'VOT_4', 0.0909)
+    result.connect_areas('V4_23', 'VOT_4', 0.9091)
 
     return result
 

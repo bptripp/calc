@@ -96,6 +96,7 @@ def _get_inputs(layer):
 
 
 if __name__ == '__main__':
+    #TODO: DenseNet
     # cnn = applications.InceptionV3(input_shape=(255,255,3))
     # figsize=(8,8)
 
@@ -108,6 +109,7 @@ if __name__ == '__main__':
     # system = make_system(cnn)
 
 
+    #TODO: reorder FV91 areas in feedforward order for visualization
     system = make_big_system()
     figsize=(8,8)
 

@@ -1,6 +1,7 @@
 # Example systems
 
 # TODO: looks like bug in layer-5 # units outside v1 and v2?
+# TODO: fraction of input to L4 V1 from LGN vs # extrinsic inputs
 
 from calc.system import System
 from calc.data import Data
@@ -262,8 +263,8 @@ def make_small_system(miniaturize=False):
 
 
 if __name__ == '__main__':
-    system = make_small_system(miniaturize=True)
-    # system = make_big_system()
+    # system = make_small_system(miniaturize=True)
+    system = make_big_system()
     system.print_description()
     # net, training_curve = calc.optimization.test_stride_patterns(system, n=1)
 

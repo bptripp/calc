@@ -20,14 +20,30 @@ result. The algorithm is as follows:
 
 TODO: do we need to enumerate all options or just try random ones?
 TODO: This code assumes the network has a single input.
-TODO: respect max when starting somewhere other than input
 """
 
 import numpy as np
 import networkx as nx
 import calc.conversion
 import calc.system, calc.network
+from calc.data import areas_FV91, E07
 
+
+def get_stride_pattern(system, max_cumulative_stride=32, best_of=50):
+    best_distance = 1e10
+    best_pattern = None
+
+    for i in range(best_of):
+        print('Making stride pattern {} of {}'.format(i, best_of))
+        candidate = StridePattern(system, max_cumulative_stride)
+        candidate.set_hints()
+        candidate.fill()
+        distance = candidate.distance_from_hints()
+        if distance < best_distance:
+            best_distance = distance
+            best_pattern = candidate
+
+    return best_pattern
 
 class StridePattern:
 
@@ -47,11 +63,41 @@ class StridePattern:
 
         self.strides = [None] * len(system.projections)
         self.cumulatives = [None] * len(system.populations)
+        self.cumulative_hints = [None] * len(system.populations)
         self.min_cumulatives = [1] * len(system.populations)
         self.max_cumulatives = [max_cumulative_stride] * len(system.populations)
 
         input_index = system.find_population_index(system.input_name)
         self.cumulatives[input_index] = 1
+
+    def set_hints(self, image_layer=0, image_channels=3, V1_channels=120, other_channels={'LGNparvo': 4, 'LGNmagno': 2, 'LGNkonio': 1}):
+        # inferred from spine counts
+
+        image_pixels = np.sqrt(system.populations[image_layer].n / image_channels)
+
+        e07 = E07()
+        V1_spine_count = e07.get_spine_count('V1')
+
+        for i in range(len(self.system.populations)):
+            pop = self.system.populations[i]
+            area = pop.name.split('_')[0]
+            if i == image_layer:
+                channels = image_channels
+            if pop.name in other_channels.keys():
+                channels = other_channels[pop.name]
+            elif area in areas_FV91:
+                spine_count = e07.get_spine_count(area)
+                channels = np.round(V1_channels * spine_count / V1_spine_count)
+
+            pixels = np.sqrt(pop.n / channels)
+            self.cumulative_hints[i] = image_pixels / pixels
+
+    def distance_from_hints(self):
+        total = 0
+        for i in range(len(self.cumulative_hints)):
+            error = np.log(self.cumulatives[i] / self.cumulative_hints[i])**2
+            total += error
+        return np.sqrt(total / len(self.cumulative_hints))
 
     def _update_cumulative_stride_bounds(self):
         graph = self.system.make_graph()
@@ -80,7 +126,7 @@ class StridePattern:
 
         while max([x is None for x in self.strides]):
             path = self._longest_unset_path()
-            print('Setting strides for path: {}'.format(path))
+            # print('Setting strides for path: {}'.format(path))
 
             start_cumulative = self.cumulatives[self.system.find_population_index(path[0])]
             end_cumulative = self.cumulatives[self.system.find_population_index(path[-1])]
@@ -148,9 +194,11 @@ class StridePattern:
                 post_ind = self.system.find_population_index(path[i+1])
 
                 if self.cumulatives[post_ind] and self.cumulatives[pre_ind]:
+                    #TODO: deal with non-integers here by failing
                     strides[projection_ind] = self.cumulatives[post_ind] / self.cumulatives[pre_ind]
                 else:
-                    strides[projection_ind] = np.random.randint(min_stride, max_stride+1)
+                    strides[projection_ind] = self._sample_stride(pre_ind, post_ind, min_stride, max_stride)
+                    # strides[projection_ind] = np.random.randint(min_stride, max_stride+1)
                     cumulatives[post_ind] = cumulatives[pre_ind] * strides[projection_ind]
 
                     # print('setting {} <= {} <= {} for {}'.format(self.min_cumulatives[post_ind], cumulatives[post_ind], self.max_cumulatives[post_ind], system.populations[post_ind].name))
@@ -170,6 +218,25 @@ class StridePattern:
 
         if not done:
             print('initialization failed; exact cumulative {}, min {}, max {}'.format(exact_cumulative, min_stride, max_stride))
+
+    def _sample_stride(self, pre_ind, post_ind, min_stride, max_stride):
+        possible_strides = range(min_stride, max_stride + 1)
+
+        if self.cumulative_hints[pre_ind] and self.cumulative_hints[post_ind]:
+            stride_hint = self.cumulative_hints[post_ind] / self.cumulative_hints[pre_ind]
+            relative_probabilities = [1/(.1+np.abs(stride-stride_hint))**2 for stride in possible_strides]
+            probabilities = relative_probabilities / np.sum(relative_probabilities)
+        else:
+            probabilities = None
+
+        result = np.random.choice(possible_strides, p=probabilities)
+
+        # print('******')
+        # print(possible_strides)
+        # print(probabilities)
+        # print(result)
+
+        return result
 
 
 def initialize_network(system, candidate, image_layer=0, image_channels=3.):
@@ -217,6 +284,57 @@ def initialize_network(system, candidate, image_layer=0, image_channels=3.):
 
     return net
 
+    # def estimate_by_spine_density(self, V1_channels=120):
+    #     #TODO: only works with FV91
+    #     for i in range(len(self.system.populations)):
+    #         pop = self.system.populations
+    #         area = pop.name.split('_')[0]
+    #         if area == 'V1':
+    #             self.cumulatives
+
+
+
+
+# def initialize_network_via_spine_count(system, image_layer=0, image_channels=3., V1_channels=120, other_channels=None):
+#     e07 = E07()
+#     net = calc.network.Network()
+#     image_resolution = np.sqrt(system.populations[image_layer].n/image_channels)
+#
+#     for i in range(len(system.populations)):
+#         pop = system.populations[i]
+#
+#         V1_spine_count = e07.get_spine_count('V1')
+#
+#         if i == image_layer:
+#             channels = image_channels
+#             pixels = image_resolution
+#         else:
+#             area = pop.name.split('_')[0]
+#             spine_count = e07.get_spine_count(area)
+#             channels = np.round(V1_channels * spine_count / V1_spine_count)
+#
+#             pixels = image_resolution / candidate.cumulatives[i]
+#             channels = max(1, round(pop.n / pixels**2))
+#
+#         net.add(pop.name, channels, pixels)
+#
+#     for i in range(len(system.projections)):
+#         projection = system.projections[i]
+#         pre = net.find_layer(projection.origin.name)
+#         post = net.find_layer(projection.termination.name)
+#
+#         stride = candidate.strides[i]
+#
+#         c = .1 + .2*np.random.rand()
+#         sigma = .1 + .1*np.random.rand()
+#
+#         #TODO: this is reset in conversion
+#         w = 7
+#
+#         net.connect(pre, post, c, stride, w, sigma)
+#
+#     return net
+
 
 if __name__ == '__main__':
     # system = calc.system.get_example_small()
@@ -224,16 +342,20 @@ if __name__ == '__main__':
     # path = longest_path(system, 'V4_5')
     # print(path)
 
-    candidate = StridePattern(system, 32)
-    candidate.fill()
+    candidate = get_stride_pattern(system)
+    # candidate = StridePattern(system, 32)
+    # candidate.set_hints()
+    # candidate.fill()
 
     # print(candidate.strides)
-    # print(candidate.cumulatives)
+    print(candidate.cumulatives)
     for i in range(len(system.populations)):
-        print('{}: {}'.format(system.populations[i].name, candidate.cumulatives[i]))
+        print('{}: {} vs {}'.format(system.populations[i].name, candidate.cumulatives[i], candidate.cumulative_hints[i]))
+    #
+    # print('distance from hints: {}'.format(candidate.distance_from_hints()))
 
-    # net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
-    # net.print()
+    net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
+    net.print()
 
     # net, training_curve = calc.conversion.test_stride_pattern(system)
     # import matplotlib.pyplot as plt
