@@ -432,7 +432,8 @@ S18_in_degree = {
     'STPa': [8283.00,4032.00,8546.00,4032.00,17072.00,4032.00,18775.00,4032.00,9054.00,4032.00,4548.00,4032.00,5531.00,4032.00,4151.00,4032.00],
     '46': [8562.00,4309.00,9443.00,4309.00,12826.00,4309.00,11556.00,4309.00,10709.00,4309.00,5580.00,4309.00,6265.00,4309.00,5267.00,4309.00],
     'AITd': [9256.00,3784.00,8883.00,3784.00,11106.00,3784.00,10468.00,3784.00,10878.00,3784.00,4865.00,3784.00,5540.00,3784.00,4731.00,3784.00],
-    'TH': [9229.00,5491.00,9829.00,5491.00,0,0,0,0,9468.00,5491.00,4774.00,5491.00,6566.00,5491.00,5629.00,5491.00]
+    # Schmidt et al. give zeroes for layer 4 of TH, so we copy values from layer 5, which tends to be the most similar
+    'TH': [9229.00,5491.00,9829.00,5491.00,9468.00,5491.00,4774.00,5491.00,9468.00,5491.00,4774.00,5491.00,6566.00,5491.00,5629.00,5491.00]
 }
 
 S18_thickness = {
@@ -1117,7 +1118,7 @@ def synapses_per_neuron(area, source_layer, target_layer):
     # return ratio * result
 
     # For areas other than V1, scale by in-degree of target layer estimated by Schmidt et al.
-    col = 2 * ['2/3', '4', '5', '6'].index(target_layer) # column of S18_in_degree for excitatory cells
+    col = 4 * ['2/3', '4', '5', '6'].index(target_layer) # column of S18_in_degree for extrinsic inputs to excitatory cells
     ratio = S18_in_degree[area][col] / S18_in_degree['V1'][col]
     return ratio * result
 
