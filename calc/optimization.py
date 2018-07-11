@@ -31,29 +31,30 @@ def test_stride_patterns(system, n=5):
     plt.show()
 
 
-def test_stride_pattern(system):
-    candidate = StridePattern(system, 32)
-    candidate.fill()
+def test_stride_pattern(system, candidate=None):
+    #TODO: add dead-end cost
+    #TODO: remove w_rf or clip w_k somehow?
+    if not candidate:
+        candidate = StridePattern(system, 32)
+        candidate.fill()
+
     net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
 
-    optimizer = tf.train.AdamOptimizer()
+    optimizer = tf.train.AdamOptimizer(learning_rate=.00001)
     print('Setting up cost structure')
     cost = Cost(system, net)
 
     print('Defining cost function')
-    c = cost.match_cost_f(1.) \
-        + cost.match_cost_b(1.) \
-        + cost.match_cost_e(1.) \
-        + cost.match_cost_w(1.) \
-        + cost.param_cost(1e-11) \
-        + cost.sparsity_constraint_cost(1.)
 
-    pc = cost.param_cost(1.)
+    pc = cost.param_cost(1e-13)
     fc = cost.match_cost_f(1.)
     bc = cost.match_cost_b(1.)
     ec = cost.match_cost_e(1.)
     wc = cost.match_cost_w(1.)
+    scc = cost.sparsity_constraint_cost(1.)
+    kcc = cost.kernel_constraint_cost(1.)
 
+    c = fc + bc + ec + wc
     vars = []
     vars.extend(cost.network.c)
     vars.extend(cost.network.sigma)
@@ -72,25 +73,23 @@ def test_stride_pattern(system):
     with tf.Session() as sess:
         print('Initializing')
         sess.run(init)
-        print('Printing')
-        update_net_from_tf(sess, net, cost.network)
-        net.print()
+        # print('Printing')
+        # update_net_from_tf(sess, net, cost.network)
+        # net.print()
 
         training_curve = []
-        training_curve.append((0, sess.run(c), sess.run(pc), sess.run(wc)))
-
-        _print_cost(sess.run(c), sess.run(pc), sess.run(fc), sess.run(bc), sess.run(ec), sess.run(wc))
+        c_value = sess.run(c)
+        training_curve.append((0, c_value))
+        _print_cost(c_value, None, None, sess.run(bc), sess.run(ec), None)
 
         iterations = 100
         for i in range(201):
             optimize_net(sess, opt_op, iterations=iterations, clip_ops=clip_ops)
             cost_i = sess.run(c)
-            cost_p_i = sess.run(pc)
-            cost_w_i = sess.run(wc)
-            _print_cost(cost_i, cost_p_i, sess.run(fc), sess.run(bc), sess.run(ec), cost_w_i)
-            training_curve.append((iterations*i, cost_i, cost_p_i, cost_w_i))
+            training_curve.append((iterations*i, cost_i))
 
             if np.isnan(cost_i):
+                _print_cost(cost_i, sess.run(pc), sess.run(fc), sess.run(bc), sess.run(ec), sess.run(wc))
                 break
 
         update_net_from_tf(sess, net, cost.network)
@@ -106,102 +105,18 @@ def optimize_net(sess, opt_op, iterations=100, clip_ops=[]):
         # for i in range(len(vars)):
         #     if gradients[i] is not None:
         #         print('grad wrt {}: {}'.format(vars[i].name, sess.run(gradients[i])))
+        print('.', end='', flush=True)
+
         opt_op.run()
 
         for clip_op in clip_ops:
             sess.run(clip_op)
 
+    print()
+
 
 def _print_cost(total_cost, param_cost, f_cost, b_cost, e_cost, rf_cost):
     print('total cost: {} param-cost: {} f cost: {} b cost {} e cost {} RF cost: {}'
           .format(total_cost, param_cost, f_cost, b_cost, e_cost, rf_cost))
-
-
-def make_optimal_network(system):
-    net = make_net_from_system(system)
-    cost = Cost(system, net)
-    # TODO: don't need n in optimization
-    c = cost.match_cost_n(1.) \
-        + cost.match_cost_w(1.) \
-        + cost.match_cost_e(1.) \
-        + cost.match_cost_f(1.) \
-        + cost.match_cost_b(1.) \
-        + cost.constraint_cost(1.)
-
-    optimizer = tf.train.AdamOptimizer()
-    vars = cost.network.collect_variables()
-    opt_op = optimizer.minimize(c, var_list=vars)
-
-    # opt_fast = tf.train.AdamOptimizer()
-    c_e = cost.match_cost_e(1.)
-    opt_op_e = optimizer.minimize(c_e, var_list=cost.network.sigma)
-
-    c_partial = cost.match_cost_f(1.) + cost.match_cost_e(1.)
-    vars_partial = []
-    vars_partial.extend(cost.network.c)
-    vars_partial.extend(cost.network.sigma)
-    opt_op_partial = optimizer.minimize(c_partial, var_list=vars_partial)
-
-    clip_ops = []
-    clip_ops.extend(get_clip_ops(cost.network.c))
-    clip_ops.extend(get_clip_ops(cost.network.sigma))
-
-    init = tf.global_variables_initializer()
-    with tf.Session() as sess:
-        sess.run(init)
-
-        update_net_from_tf(sess, net, cost.network)
-
-        # net.print()
-        # cost.compare_system(system, sess)
-
-        print('optimize e')
-        for i in range(10):
-            optimize_net(sess, opt_op_e, clip_ops=clip_ops)
-            cost_i = sess.run(c_e)
-            print('cost: {}'.format(cost_i))
-
-        update_net_from_tf(sess, net, cost.network)
-        net.print()
-        cost.compare_system(system, sess)
-
-        print('optimize f and e')
-        for i in range(20):
-            optimize_net(sess, opt_op_partial, clip_ops=clip_ops)
-            cost_i = sess.run(c_partial)
-            print('cost: {}'.format(cost_i))
-
-        update_net_from_tf(sess, net, cost.network)
-        net.print()
-        cost.compare_system(system, sess)
-
-        print('optimize full')
-        cost_best = 1e10
-        for i in range(20): #TODO: more iterations here
-            optimize_net(sess, opt_op, clip_ops=clip_ops)
-
-            cost_i = sess.run(c)
-            print('cost: {}'.format(cost_i))
-
-            if cost_i < cost_best:
-                cost_best = cost_i
-                update_net_from_tf(sess, net, cost.network)
-
-            if i % 20 == 0:
-                print(sess.run(cost.match_cost_n(1.)))
-                print(sess.run(cost.match_cost_w(1.)))
-                print(sess.run(cost.match_cost_e(1.)))
-                print(sess.run(cost.match_cost_f(1.)))
-                print(sess.run(cost.match_cost_b(1.)))
-
-            if np.isnan(cost_i):
-                print('optimization failed')
-                break
-
-        # update_net_from_tf(sess, net, cost.network)
-        net.print()
-
-        cost.compare_system(system, sess)
-        return net
 
 
