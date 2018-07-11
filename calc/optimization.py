@@ -83,7 +83,7 @@ def test_stride_pattern(system, candidate=None):
         _print_cost(c_value, None, None, sess.run(bc), sess.run(ec), None)
 
         iterations = 100
-        for i in range(201):
+        for i in range(401):
             optimize_net(sess, opt_op, iterations=iterations, clip_ops=clip_ops)
             cost_i = sess.run(c)
             training_curve.append((iterations*i, cost_i))

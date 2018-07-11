@@ -486,8 +486,10 @@ S18_thickness = {
     'TH': [0.28,0.65,0.12,0.57,0.26,1.87]
 }
 
+# Note most of these are similar to surface areas in FV91, but some are quite different, e.g. V1 (1484.63 vs. 1120),
+# DP (113.83 vs. 50), and STPp (245.48 vs. 120).
 S18_surface_area = {
-    'V1': 1484.63, #TODO: this doesn't match FV91
+    'V1': 1484.63,
     'V3': 120.57,
     'PO': 75.37,
     'V2': 1193.40,
@@ -932,7 +934,8 @@ BDM04_excitatory_types = {
     '4': ['ss4(L4)', 'ss4(L2/3)', 'p4'],
     '5': ['p5(L2/3)', 'p5(L5/6)'],
     '6': ['p6(L4)', 'p6(L5/6)'],
-    'extrinsic': ['X/Y', 'as']
+    'extrinsic': ['X/Y'],
+    'all': ['sp1', 'p2/3', 'ss4(L4)', 'ss4(L2/3)', 'p4', 'p5(L2/3)', 'p5(L5/6)', 'p6(L4)', 'p6(L5/6)', 'X/Y', 'as']
 }
 
 # Extracted from Fig 9A via WebPlotDigitizer; needed to check import of tables in supplementary material
@@ -1145,36 +1148,42 @@ def synapses_per_neuron(area, source_layer, target_layer):
     # find table of synapses between types summed across all layers
     totals = np.zeros((n_target_types, n_source_types))
     layers = ['1', '2/3', '4', '5', '6']
-    if area == 'V1':
-        for layer in layers:
-            totals = totals + _get_synapses_per_layer_V1(layer)
-    else:
-        for layer in layers:
-            totals = totals + _get_synapses_per_layer_V2(layer)
+    for layer in layers:
+        totals = totals + _get_synapses_per_layer_cat_V1(layer)
 
     # sum over sources and weighted average over targets ...
     source_types = BDM04_excitatory_types[source_layer] # cell types in source layer (regardless of where synapses are)
+    all_source_types = BDM04_excitatory_types['all']
     target_types = BDM04_excitatory_types[target_layer]
 
+    total_inputs_from_source = np.zeros(n_target_types)
     total_inputs = np.zeros(n_target_types)
     for i in range(n_source_types):
         if BDM04_sources[i] in source_types:
+            total_inputs_from_source = total_inputs_from_source + totals[:,i]
+        if BDM04_sources[i] in all_source_types:
             total_inputs = total_inputs + totals[:,i]
 
-    numerator = 0.
-    denominator = 0.
+    weighted_sum_from_source = 0.
+    weighted_sum = 0.
+    total_weight = 0.
     for i in range(n_target_types):
         if BDM04_targets[i] in target_types:
             n = BDM04_N_per_type[BDM04_targets[i]]
-            numerator = numerator + n * total_inputs[i]
-            denominator = denominator + n
+            weighted_sum_from_source += n * total_inputs_from_source[i]
+            weighted_sum += n * total_inputs[i]
+            total_weight += n
 
-    result = numerator / denominator
+    in_degree_from_source = weighted_sum_from_source / total_weight
+    in_degree = weighted_sum / total_weight
+
+    col = 4 * ['2/3', '4', '5', '6'].index(target_layer) # column of S18_in_degree for extrinsic inputs to excitatory cells
+    monkey_cat_ratio = S18_in_degree['V1'][col] / in_degree
 
     # For areas other than V1, scale by in-degree of target layer estimated by Schmidt et al.
-    col = 4 * ['2/3', '4', '5', '6'].index(target_layer) # column of S18_in_degree for extrinsic inputs to excitatory cells
-    ratio = S18_in_degree[area][col] / S18_in_degree['V1'][col]
-    return ratio * result
+    area_ratio = S18_in_degree[area][col] / S18_in_degree['V1'][col]
+
+    return area_ratio * monkey_cat_ratio * in_degree_from_source
 
 
 def _synapses_per_neuron_V1():
@@ -2151,13 +2160,21 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     data = Data()
 
-    #TODO: move to unit test
+    # #TODO: move to unit test
+    # for area in areas_FV91:
+    #     mm2 = S18_surface_area[area]
+    #     n = [data.get_num_neurons(area, layer) for layer in ['1', '2/3', '4', '5', '6']]
+    #     d = [x/mm2 for x in n]
+    #     print('{} should be {}'.format(np.sum(d)/.75, S18_density[area][1]))
+    #     # print('{}: {}'.format(area, d))
+
+    # for area in areas_FV91:
+    #     target_layer = '2/3'
+    #     inputs = [data.get_inputs_per_neuron(area, source_layer, target_layer) for source_layer in ['1', '2/3', '4', '5', '6']]
+    #     print(inputs)
+
     for area in areas_FV91:
-        mm2 = S18_surface_area[area]
-        n = [data.get_num_neurons(area, layer) for layer in ['1', '2/3', '4', '5', '6']]
-        d = [x/mm2 for x in n]
-        print('{} should be {}'.format(np.sum(d)/.75, S18_density[area][1]))
-        # print('{}: {}'.format(area, d))
+        print(data.get_inputs_per_neuron(area, 'extrinsic', '4'))
 
     # print(data.get_areas())
     # print(data.get_SLN(data.get_areas()[0], data.get_areas()[1]))
