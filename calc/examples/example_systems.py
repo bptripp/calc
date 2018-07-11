@@ -4,7 +4,9 @@
 # TODO: fraction of input to L4 V1 from LGN vs # extrinsic inputs
 
 from calc.system import System
+from calc.stride import StridePattern
 from calc.data import Data
+from calc.optimization import test_stride_pattern
 
 
 data = Data()
@@ -264,7 +266,19 @@ def make_small_system(miniaturize=False):
 
 if __name__ == '__main__':
     # system = make_small_system(miniaturize=True)
-    system = make_big_system()
-    system.print_description()
+    # system = make_big_system()
+    # system.print_description()
     # net, training_curve = calc.optimization.test_stride_patterns(system, n=1)
 
+    import pickle
+    with open('stride-pattern-best-of-10.pkl', 'rb') as file:
+        data = pickle.load(file)
+
+    # data['system'].print_description()
+    net, training_curve = test_stride_pattern(data['system'], data['strides'])
+    with open('optimization-result.pkl', 'wb') as file:
+        pickle.dump({'net': net, 'training_curve': training_curve}, file)
+
+    print('**********************')
+    print(net)
+    print(training_curve)
