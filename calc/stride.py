@@ -29,14 +29,14 @@ import calc.system, calc.network
 from calc.data import areas_FV91, E07
 
 
-def get_stride_pattern(system, max_cumulative_stride=32, best_of=50):
+def get_stride_pattern(system, max_cumulative_stride=512, best_of=10):
     best_distance = 1e10
     best_pattern = None
 
     for i in range(best_of):
         print('Making stride pattern {} of {}'.format(i, best_of))
         candidate = StridePattern(system, max_cumulative_stride)
-        candidate.set_hints()
+        # candidate.set_hints()
         candidate.fill()
         distance = candidate.distance_from_hints()
         if distance < best_distance:
@@ -60,15 +60,18 @@ class StridePattern:
 
         self.system = system
         self.max_cumulative_stride = max_cumulative_stride
+        self._reset()
 
+    def _reset(self):
         self.strides = [None] * len(system.projections)
         self.cumulatives = [None] * len(system.populations)
         self.cumulative_hints = [None] * len(system.populations)
         self.min_cumulatives = [1] * len(system.populations)
-        self.max_cumulatives = [max_cumulative_stride] * len(system.populations)
-
+        self.max_cumulatives = [self.max_cumulative_stride] * len(system.populations)
         input_index = system.find_population_index(system.input_name)
         self.cumulatives[input_index] = 1
+        self.set_hints()
+
 
     def set_hints(self, image_layer=0, image_channels=3, V1_channels=120, other_channels={'LGNparvo': 4, 'LGNmagno': 2, 'LGNkonio': 1}):
         # inferred from spine counts
@@ -85,18 +88,24 @@ class StridePattern:
                 channels = image_channels
             if pop.name in other_channels.keys():
                 channels = other_channels[pop.name]
-            elif area in areas_FV91:
+            elif area in areas_FV91 and '2/3' in pop.name:
                 spine_count = e07.get_spine_count(area)
                 channels = np.round(V1_channels * spine_count / V1_spine_count)
+            else:
+                channels = None
 
-            pixels = np.sqrt(pop.n / channels)
-            self.cumulative_hints[i] = image_pixels / pixels
+            if channels:
+                pixels = np.sqrt(pop.n / channels)
+                self.cumulative_hints[i] = image_pixels / pixels
 
     def distance_from_hints(self):
         total = 0
+        count = 0
         for i in range(len(self.cumulative_hints)):
-            error = np.log(self.cumulatives[i] / self.cumulative_hints[i])**2
-            total += error
+            if self.cumulative_hints[i]:
+                error = np.log(self.cumulatives[i] / self.cumulative_hints[i])**2
+                total += error
+                count += 1
         return np.sqrt(total / len(self.cumulative_hints))
 
     def _update_cumulative_stride_bounds(self):
@@ -142,7 +151,12 @@ class StridePattern:
 
             # print('start c: {} end c: {} max c: {} max stride: {} len: {}'.format(
             #     start_cumulative, end_cumulative, self.max_cumulative_stride, max_stride, len(path)-1))
-            self.init_path(path, exact_cumulative=end_cumulative, max_stride=max_stride)
+            success = self.init_path(path, exact_cumulative=end_cumulative, max_stride=max_stride)
+
+            if not success:
+                print('Resetting all strides')
+                self._reset()
+
             self._update_cumulative_stride_bounds()
 
     @staticmethod
@@ -217,18 +231,21 @@ class StridePattern:
                     break
 
         if not done:
+            print(path)
             print('initialization failed; exact cumulative {}, min {}, max {}'.format(exact_cumulative, min_stride, max_stride))
+
+        return done
 
     def _sample_stride(self, pre_ind, post_ind, min_stride, max_stride):
         possible_strides = range(min_stride, max_stride + 1)
 
         if self.cumulative_hints[pre_ind] and self.cumulative_hints[post_ind]:
             stride_hint = self.cumulative_hints[post_ind] / self.cumulative_hints[pre_ind]
-            relative_probabilities = [1/(.1+np.abs(stride-stride_hint))**2 for stride in possible_strides]
-            probabilities = relative_probabilities / np.sum(relative_probabilities)
         else:
-            probabilities = None
+            stride_hint = 1.25
 
+        relative_probabilities = [1/(.1+np.abs(stride-stride_hint))**2 for stride in possible_strides]
+        probabilities = relative_probabilities / np.sum(relative_probabilities)
         result = np.random.choice(possible_strides, p=probabilities)
 
         # print('******')
@@ -337,8 +354,13 @@ def initialize_network(system, candidate, image_layer=0, image_channels=3.):
 
 
 if __name__ == '__main__':
+    from calc.examples.example_systems import make_big_system, make_small_system
+    import pickle
+
+    system = make_big_system()
+
     # system = calc.system.get_example_small()
-    system = calc.system.get_example_medium()
+    # system = calc.system.get_example_medium()
     # path = longest_path(system, 'V4_5')
     # print(path)
 
@@ -346,6 +368,10 @@ if __name__ == '__main__':
     # candidate = StridePattern(system, 32)
     # candidate.set_hints()
     # candidate.fill()
+
+    with open('stride-pattern.pkl', 'wb') as file:
+        pickle.dump({'system': system, 'strides': candidate}, file)
+
 
     # print(candidate.strides)
     print(candidate.cumulatives)
