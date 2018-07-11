@@ -36,22 +36,36 @@ class Data:
         :param area: A visual area
         :param layer: Cortical layer
         :return: Estimated number of excitatory neurons in the given area/layer per hemisphere; we
-            assume convolutional units are similar to inhibitory neurons based on Parisien et al. (2008).
+            assume convolutional units are similar to excitatory neurons based on Parisien et al. (2008).
         """
-        #TODO: account for lack of neurons in L1
-        #TODO: account for varied density across layers
         mm2 = S18_surface_area[area]
 
+        # d: neurons / mm^3
+        # D: neurons / mm^2
+        # t: thickness (mm)
+        # l: layer (the above variables can have a layer subscript, otherwise they refer to all layers together)
+        # A: the current cortical area
+
         if area == 'V1':
-            neurons_per_mm2 = _get_neurons_per_mm2_V1(layer)
+            D_GMKH = GMKH17_density_per_mm2_V1[layer]
+            # Normalize so total is according to Schmidt ...
+            D_l_A = D_GMKH * S18_density['V1'][1] / GMKH17_density_per_mm2_V1['1-6']
         else:
-            total_neurons_per_mm2 = S18_density[area][1]
-            layer_index = ['1', '2/3', '4', '5', '6'].index(layer)
-            fraction = S18_thickness[area][layer_index] / S18_thickness[area][-1]
-            neurons_per_mm2 = fraction * total_neurons_per_mm2
+            layers = ['1', '2/3', '4', '5', '6']
+            d_GMKH = [GMKH17_density_per_mm3_V1[l] for l in layers]
+            t_GMKH = [GMKH17_thickness_V1[l] for l in layers]
+
+            # For non-V1 area A, we will assume d_l_A = a_A d_l_V1, where a_A is a constant (shared across layers).
+            # So ... D_A = sum(d_l_A t_l_A) = a_A sum(d_l_V1 t_l_A),
+            #        a_A = D_A / sum(d_l_V1 t_l_A),
+            #      D_l_A = d_l_A t_l_A = a_A d_l_V1 t_l_A.
+
+            D_A = S18_density[area][1]
+            a_A = D_A / np.sum([GMKH17_density_per_mm3_V1[l] * S18_thickness[area][layers.index(l)] for l in layers])
+            D_l_A = a_A * GMKH17_density_per_mm3_V1[layer] * S18_thickness[area][layers.index(layer)]
 
         # We multiply by 0.75 to match fraction excitatory cells; see Hendry et al. (1987) J Neurosci
-        return int(0.75 * mm2 * neurons_per_mm2)
+        return int(0.75 * mm2 * D_l_A)
 
     def get_receptive_field_size(self, area):
         """
@@ -436,6 +450,7 @@ S18_in_degree = {
     'TH': [9229.00,5491.00,9829.00,5491.00,9468.00,5491.00,4774.00,5491.00,9468.00,5491.00,4774.00,5491.00,6566.00,5491.00,5629.00,5491.00]
 }
 
+# 1, 2/3, 4, 5, 6, total
 S18_thickness = {
     'V1': [0.09,0.37,0.46,0.17,0.16,1.24],
     'V2': [0.12,0.6,0.24,0.25,0.25,1.46],
@@ -707,6 +722,49 @@ SAH_area = {
     'Hippocampus': 181,
     'Neocortex': 10430
 }
+
+
+# Garcia-Marin, V., Kelly, J. G., & Hawken, M. J. (2017). Major feedforward thalamic input into layer
+# 4C of primary visual cortex in primate. Cerebral Cortex, 1-16.
+GMKH17_density_per_mm3_V1 = {
+    '1': 20700,
+    '2/3': 257800,
+    '4A': 268800,
+    '4B': 173800,
+    '4Calpha': 235300,
+    '4Cbeta': 410600,
+    '4': 259120, # average of sublayers weighted by thickness
+    '5': 213000,
+    '6': 214500,
+    '1-6': 229100
+}
+
+GMKH17_density_per_mm2_V1 = {
+    '1': 2500,
+    '2/3': 143000,
+    '4A': 12800,
+    '4B': 36000,
+    '4Calpha': 35900,
+    '4Cbeta': 56500,
+    '4': 12800 + 36000 + 35900 + 56500,
+    '5': 36200,
+    '6': 55500,
+    '1-6': 378300
+}
+
+GMKH17_thickness_V1 = {
+    '1': 0.120772947,
+    '2/3': 0.554693561,
+    '4A': 0.047619048,
+    '4B': 0.207134638,
+    '4Calpha': 0.152571186,
+    '4Cbeta': 0.137603507,
+    '4': 0.047619048 + 0.207134638 + 0.152571186 + 0.137603507,
+    '5': 0.169953052,
+    '6': 0.258741259,
+    '1-6': 1.651243998
+}
+
 
 # O'Kusky, J., & Colonnier, M. (1982). A laminar analysis of the number of neurons, glia, and synapses in the visual
 # cortex (area 17) of adult macaque monkeys. Journal of Comparative Neurology, 210(3), 278-290.
@@ -1112,10 +1170,6 @@ def synapses_per_neuron(area, source_layer, target_layer):
             denominator = denominator + n
 
     result = numerator / denominator
-
-    # # for areas other than V1, scale with spine density
-    # ratio = e07.get_spine_count(area) / e07.get_spine_count('V1')
-    # return ratio * result
 
     # For areas other than V1, scale by in-degree of target layer estimated by Schmidt et al.
     col = 4 * ['2/3', '4', '5', '6'].index(target_layer) # column of S18_in_degree for extrinsic inputs to excitatory cells
@@ -2097,6 +2151,14 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt
     data = Data()
 
+    #TODO: move to unit test
+    for area in areas_FV91:
+        mm2 = S18_surface_area[area]
+        n = [data.get_num_neurons(area, layer) for layer in ['1', '2/3', '4', '5', '6']]
+        d = [x/mm2 for x in n]
+        print('{} should be {}'.format(np.sum(d)/.75, S18_density[area][1]))
+        # print('{}: {}'.format(area, d))
+
     # print(data.get_areas())
     # print(data.get_SLN(data.get_areas()[0], data.get_areas()[1]))
     # print(data.get_FLNe(data.get_areas()[0], data.get_areas()[1]))
@@ -2199,7 +2261,7 @@ if __name__ == '__main__':
 
     # synapses_per_neuron('MT', '4', '2/3')
 
-    e07.plot()
+    # e07.plot()
 
     # get_centre(self, area):
 
