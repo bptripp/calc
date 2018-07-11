@@ -5,6 +5,7 @@ import numpy as np
 
 #TODO: refactor finer-grained cost objects that encapsulate individual terms, associated NetworkVariables & SystemConstants
 
+
 class SystemConstants:
     def __init__(self, system):
         """
@@ -33,7 +34,7 @@ class SystemConstants:
 
         for projection in system.projections:
             if isinstance(projection, InterAreaProjection):
-                print('{} f={}'.format(projection.get_description(), projection.f))
+                # print('{} f={}'.format(projection.get_description(), projection.f))
                 self.f.append(tf.constant(float(projection.f)))
                 self.b.append(None)
             elif isinstance(projection, InterLaminarProjection):
@@ -358,9 +359,11 @@ class Cost:
         """
         terms = []
         for i in range(self.network.n_layers):
+            fractions = []
             for conn_ind in self.network.output_connections:
-                terms.append(self.network.c[conn_ind])
-        return tf.constant(kappa) * norm_squared_error(1.0, tf.reduce_sum(terms))
+                fractions.append(self.network.c[conn_ind])
+            terms.append(norm_squared_error(1.0, tf.reduce_sum(fractions)))
+        return tf.constant(kappa) * tf.reduce_mean(terms)
 
     def constraint_cost(self, kappa):
         """
@@ -381,6 +384,9 @@ class Cost:
         """
         return bounds(self.network.c, min=1e-2, max=1.) \
             + bounds(self.network.sigma, min=1e-3, max=1.)
+
+    def kernel_constraint_cost(self, kappa):
+        return bounds(self.network.c, min=1.)
 
     def compare_system(self, system, sess):
         """
