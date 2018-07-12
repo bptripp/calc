@@ -271,7 +271,7 @@ if __name__ == '__main__':
     # net, training_curve = calc.optimization.test_stride_patterns(system, n=1)
 
     import pickle
-    with open('stride-pattern-best-of-10.pkl', 'rb') as file:
+    with open('stride-pattern-best-of-500.pkl', 'rb') as file:
         data = pickle.load(file)
 
     # data['system'].print_description()

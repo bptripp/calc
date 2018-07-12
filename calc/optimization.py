@@ -32,7 +32,6 @@ def test_stride_patterns(system, n=5):
 
 
 def test_stride_pattern(system, candidate=None):
-    #TODO: add dead-end cost
     #TODO: remove w_rf or clip w_k somehow?
     if not candidate:
         candidate = StridePattern(system, 32)
@@ -53,8 +52,9 @@ def test_stride_pattern(system, candidate=None):
     wc = cost.match_cost_w(1.)
     scc = cost.sparsity_constraint_cost(1.)
     kcc = cost.kernel_constraint_cost(1.)
+    dec = cost.dead_end_cost(1.)
 
-    c = fc + bc + ec + wc
+    c = fc + bc + ec + wc + dec
     vars = []
     vars.extend(cost.network.c)
     vars.extend(cost.network.sigma)
@@ -73,9 +73,9 @@ def test_stride_pattern(system, candidate=None):
     with tf.Session() as sess:
         print('Initializing')
         sess.run(init)
-        # print('Printing')
-        # update_net_from_tf(sess, net, cost.network)
-        # net.print()
+        print('Printing')
+        update_net_from_tf(sess, net, cost.network)
+        net.print()
 
         training_curve = []
         c_value = sess.run(c)
@@ -87,6 +87,7 @@ def test_stride_pattern(system, candidate=None):
             optimize_net(sess, opt_op, iterations=iterations, clip_ops=clip_ops)
             cost_i = sess.run(c)
             training_curve.append((iterations*i, cost_i))
+            print(cost_i)
 
             if np.isnan(cost_i):
                 _print_cost(cost_i, sess.run(pc), sess.run(fc), sess.run(bc), sess.run(ec), sess.run(wc))

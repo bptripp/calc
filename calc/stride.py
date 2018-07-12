@@ -364,7 +364,7 @@ if __name__ == '__main__':
     # path = longest_path(system, 'V4_5')
     # print(path)
 
-    candidate = get_stride_pattern(system)
+    candidate = get_stride_pattern(system, best_of=500)
     # candidate = StridePattern(system, 32)
     # candidate.set_hints()
     # candidate.fill()
