@@ -350,7 +350,6 @@ class Cost:
 
     def dead_end_cost(self, kappa):
         """
-        TODO: test
         :param kappa: weight relative to other costs
         :return: cost due to under-use or over-use of feature maps in outgoing connections;
             the premise is that most pyramidal neurons are projection neurons that have a
@@ -360,9 +359,10 @@ class Cost:
         terms = []
         for i in range(self.network.n_layers):
             fractions = []
-            for conn_ind in self.network.output_connections:
-                fractions.append(self.network.c[conn_ind])
-            terms.append(norm_squared_error(1.0, tf.reduce_sum(fractions)))
+            if self.network.output_connections[i]: # this cost only applies if layer has outputs
+                for conn_ind in self.network.output_connections[i]:
+                    fractions.append(self.network.c[conn_ind])
+                terms.append(norm_squared_error(1.0, tf.reduce_sum(fractions)))
         return tf.constant(kappa) * tf.reduce_mean(terms)
 
     def constraint_cost(self, kappa):
