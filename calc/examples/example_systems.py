@@ -271,14 +271,29 @@ if __name__ == '__main__':
     # net, training_curve = calc.optimization.test_stride_patterns(system, n=1)
 
     import pickle
-    with open('stride-pattern-best-of-500.pkl', 'rb') as file:
+    import numpy as np
+    import matplotlib.pyplot as plt
+    # with open('stride-pattern-best-of-500.pkl', 'rb') as file:
+    #     data = pickle.load(file)
+    #
+    # # data['system'].print_description()
+    # net, training_curve = test_stride_pattern(data['system'], data['strides'])
+    # with open('optimization-result.pkl', 'wb') as file:
+    #     pickle.dump({'net': net, 'training_curve': training_curve}, file)
+    #
+    # print('**********************')
+    # print(net)
+    # print(training_curve)
+
+    with open('optimization-result-best-of-500.pkl', 'rb') as file:
         data = pickle.load(file)
+    net = data['net']
 
-    # data['system'].print_description()
-    net, training_curve = test_stride_pattern(data['system'], data['strides'])
-    with open('optimization-result.pkl', 'wb') as file:
-        pickle.dump({'net': net, 'training_curve': training_curve}, file)
-
-    print('**********************')
-    print(net)
-    print(training_curve)
+    w = [int(np.round(conn.w)) for conn in net.connections]
+    b = np.linspace(.5, max(w)+.5, max(w)+1)
+    plt.figure(figsize=(4.5,1.5))
+    plt.hist(w, bins=b)
+    plt.xlabel('Kernel width')
+    plt.ylabel('Count')
+    plt.tight_layout()
+    plt.show()

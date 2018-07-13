@@ -88,9 +88,8 @@ class Data:
         """
         :param area: A visual area
         :param target_layer: A cortical layer
-        :return: Number of inputs per neuron from other cortical areas
+        :return: Estimated number of feedforward inputs per neuron from outside this area
         """
-        #TODO: account for repeated synapses
         spn = synapses_per_neuron(area, 'extrinsic', target_layer)
         return spn / self.synapses_per_connection
 
@@ -410,10 +409,6 @@ macaque visual cortex,” Brain Struct. Funct., vol. 223, no. 3, pp. 1409–1435
 """
 
 # (intrinsic, extrinsic) for (2/3E, 2/3I, 4E, 4I, 5E, 5I, 6E, 6I)
-#TODO: use Binzegger's numbers for V1 but scale total layer-wise by Schmidt's layer-wise in-degree
-#TODO: Schmidt's estimate based on layer-specific synapse densitites and layer thicknesses
-#TODO: but is this table by layer in which synapse occurs or layer of cell body? L1 missing so must be latter
-
 S18_in_degree = {
     'V1': [3550.00,1246.00,2885.00,1246.00,1975.00,1246.00,2860.00,1246.00,4100.00,1246.00,1632.00,1246.00,2008.00,1246.00,1644.00,1246.00],
     'V2': [3608.00,1848.00,3853.00,1848.00,3413.00,1848.00,4819.00,1848.00,5669.00,1848.00,3124.00,1848.00,4596.00,1848.00,3511.00,1848.00],
@@ -1098,14 +1093,34 @@ class E07:
     def plot(self):
         import matplotlib.pyplot as plt
 
-        distances = []
-        spine_counts = []
-        for area in areas_FV91:
-            distances.append(self.get_distance(area))
-            spine_counts.append(self.get_spine_count(area))
+        interpolated_distances = []
+        interpolated_spine_counts = []
+        measured_distances = []
+        measured_spine_counts = []
 
-        plt.plot(distances, spine_counts, '.')
+        for area in areas_FV91:
+            measured = False
+            if area in self.layer_3_basal_spine_count.keys():
+                measured = True
+            else:
+                for key in self.FV91_mappings.keys():
+                    if area in self.FV91_mappings[key]:
+                        measured = True
+
+            if measured:
+                measured_distances.append(self.get_distance(area))
+                measured_spine_counts.append(self.get_spine_count(area))
+            else:
+                interpolated_distances.append(self.get_distance(area))
+                interpolated_spine_counts.append(self.get_spine_count(area))
+
+        plt.figure(figsize=(3.5, 2.5))
+        plt.plot(measured_distances, measured_spine_counts, 'bo')
+        plt.plot(interpolated_distances, interpolated_spine_counts, 'k.')
         plt.plot([0, 65], self.intercept + [0, self.slope*65], 'k')
+        plt.xlabel('Distance from V1')
+        plt.ylabel('Basal spine count')
+        plt.tight_layout()
         plt.show()
 
 
@@ -2173,8 +2188,8 @@ if __name__ == '__main__':
     #     inputs = [data.get_inputs_per_neuron(area, source_layer, target_layer) for source_layer in ['1', '2/3', '4', '5', '6']]
     #     print(inputs)
 
-    for area in areas_FV91:
-        print(data.get_inputs_per_neuron(area, 'extrinsic', '4'))
+    # for area in areas_FV91:
+    #     print(data.get_inputs_per_neuron(area, 'extrinsic', '4'))
 
     # print(data.get_areas())
     # print(data.get_SLN(data.get_areas()[0], data.get_areas()[1]))
@@ -2218,41 +2233,41 @@ if __name__ == '__main__':
     # plt.plot([30, 60], [np.mean(densities[far_V1]), np.mean(densities[far_V1])])
     # plt.show()
 
-    # iac = InterAreaConnections()
-    # plt.imshow(iac.get_connectivity_grid())
-    # plt.show()
+    iac = InterAreaConnections()
+    plt.imshow(iac.get_connectivity_grid())
+    plt.show()
 
-    # SLN = iac.get_interpolated_SLN()
-    # fig, ax = plt.subplots()
-    # im = ax.imshow(SLN, vmin=0, vmax=100)
-    # ax.set_xticks(np.arange(len(data.get_areas())))
-    # ax.set_yticks(np.arange(len(data.get_areas())))
-    # ax.set_xticklabels(data.get_areas(), fontsize=7)
-    # ax.set_yticklabels(data.get_areas(), fontsize=7)
-    # plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
-    #          rotation_mode="anchor")
-    # cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
-    # cbar.ax.set_ylabel(r'SLN', rotation=-90, va="bottom", fontsize=8)
-    # cbar.ax.tick_params(labelsize=8)
-    # plt.xlabel('Source area')
-    # plt.ylabel('Target area')
-    # plt.show()
+    SLN = iac.get_interpolated_SLN()
+    fig, ax = plt.subplots()
+    im = ax.imshow(SLN, vmin=0, vmax=100)
+    ax.set_xticks(np.arange(len(data.get_areas())))
+    ax.set_yticks(np.arange(len(data.get_areas())))
+    ax.set_xticklabels(data.get_areas(), fontsize=7)
+    ax.set_yticklabels(data.get_areas(), fontsize=7)
+    plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
+             rotation_mode="anchor")
+    cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
+    cbar.ax.set_ylabel(r'SLN', rotation=-90, va="bottom", fontsize=8)
+    cbar.ax.tick_params(labelsize=8)
+    plt.xlabel('Source area')
+    plt.ylabel('Target area')
+    plt.show()
 
-    # FLNe = iac.get_interpolated_FLNe()
-    # fig, ax = plt.subplots()
-    # im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
-    # ax.set_xticks(np.arange(len(data.get_areas())))
-    # ax.set_yticks(np.arange(len(data.get_areas())))
-    # ax.set_xticklabels(data.get_areas(), fontsize=7)
-    # ax.set_yticklabels(data.get_areas(), fontsize=7)
-    # plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
-    #          rotation_mode="anchor")
-    # cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
-    # cbar.ax.set_ylabel(r'log$_{10}$(FLNe)', rotation=-90, va="bottom", fontsize=8)
-    # cbar.ax.tick_params(labelsize=8)
-    # plt.xlabel('Source area')
-    # plt.ylabel('Target area')
-    # plt.show()
+    FLNe = iac.get_interpolated_FLNe()
+    fig, ax = plt.subplots()
+    im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
+    ax.set_xticks(np.arange(len(data.get_areas())))
+    ax.set_yticks(np.arange(len(data.get_areas())))
+    ax.set_xticklabels(data.get_areas(), fontsize=7)
+    ax.set_yticklabels(data.get_areas(), fontsize=7)
+    plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
+             rotation_mode="anchor")
+    cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
+    cbar.ax.set_ylabel(r'log$_{10}$(FLNe)', rotation=-90, va="bottom", fontsize=8)
+    cbar.ax.tick_params(labelsize=8)
+    plt.xlabel('Source area')
+    plt.ylabel('Target area')
+    plt.show()
 
     # logFLNe = np.log10(FLNe).flatten()
     # dist = np.array(S18_distance).flatten()
