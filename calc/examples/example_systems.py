@@ -19,7 +19,7 @@ def add_areas(system, cortical_areas):
                 name = _pop_name(area, layer)
 
                 n = data.get_num_neurons(area, layer)
-                e = data.get_extrinsic_inputs(area, layer)
+                e = data.get_extrinsic_inputs(area, layer) if layer == '4' else None
                 w = data.get_receptive_field_size(area) if layer == '2/3' else None
 
                 system.add(name, n, e, w)
@@ -135,7 +135,7 @@ def make_big_system():
 
     for layer in ['4Calpha', '4Cbeta', '4B', '2/3', '5']:
         n = data.get_num_neurons('V1', layer)
-        e = data.get_extrinsic_inputs('V1', '4' if layer[0] == '4' else layer)
+        e = data.get_extrinsic_inputs('V1', '4') if layer[0] == '4' else None
         if layer == '2/3':
             w = data.get_receptive_field_size('V1')
         elif layer == '4B':
@@ -159,7 +159,7 @@ def make_big_system():
             name = _pop_name(area, layer)
 
             n = data.get_num_neurons('V2', layer) / 2  # dividing V2 equally into thick and thin+inter stripes
-            e = data.get_extrinsic_inputs('V2', layer)
+            e = data.get_extrinsic_inputs('V2', '4') if layer == '4' else None
             w = data.get_receptive_field_size('V2') if layer == '2/3' else None
 
             system.add(name, n, e, w)
@@ -231,7 +231,7 @@ def make_small_system(miniaturize=False):
         name = _pop_name(area, layer)
 
         n = data.get_num_neurons(area, layer)
-        e = data.get_extrinsic_inputs(area, '4' if layer == '4Cbeta' else layer)
+        e = data.get_extrinsic_inputs(area, '4') if layer == '4Cbeta' else None
         w = data.get_receptive_field_size(area) if layer == '2/3' else None
 
         system.add(name, n, e, w)
@@ -266,34 +266,34 @@ def make_small_system(miniaturize=False):
 
 if __name__ == '__main__':
     # system = make_small_system(miniaturize=True)
-    # system = make_big_system()
+    system = make_big_system()
     # system.print_description()
     # net, training_curve = calc.optimization.test_stride_patterns(system, n=1)
 
     import pickle
     import numpy as np
     import matplotlib.pyplot as plt
-    # with open('stride-pattern-best-of-500.pkl', 'rb') as file:
-    #     data = pickle.load(file)
-    #
-    # # data['system'].print_description()
-    # net, training_curve = test_stride_pattern(data['system'], data['strides'])
-    # with open('optimization-result.pkl', 'wb') as file:
-    #     pickle.dump({'net': net, 'training_curve': training_curve}, file)
-    #
-    # print('**********************')
-    # print(net)
-    # print(training_curve)
-
-    with open('optimization-result-best-of-500.pkl', 'rb') as file:
+    with open('stride-pattern-best-of-500.pkl', 'rb') as file:
         data = pickle.load(file)
-    net = data['net']
 
-    w = [int(np.round(conn.w)) for conn in net.connections]
-    b = np.linspace(.5, max(w)+.5, max(w)+1)
-    plt.figure(figsize=(4.5,1.5))
-    plt.hist(w, bins=b)
-    plt.xlabel('Kernel width')
-    plt.ylabel('Count')
-    plt.tight_layout()
-    plt.show()
+    # system = data['system']
+    net, training_curve = test_stride_pattern(system, data['strides'])
+    with open('optimization-result.pkl', 'wb') as file:
+        pickle.dump({'net': net, 'training_curve': training_curve}, file)
+
+    print('**********************')
+    print(net)
+    print(training_curve)
+
+    # with open('optimization-result-best-of-500.pkl', 'rb') as file:
+    #     data = pickle.load(file)
+    # net = data['net']
+    #
+    # w = [int(np.round(conn.w)) for conn in net.connections]
+    # b = np.linspace(.5, max(w)+.5, max(w)+1)
+    # plt.figure(figsize=(4.5,1.5))
+    # plt.hist(w, bins=b)
+    # plt.xlabel('Kernel width')
+    # plt.ylabel('Count')
+    # plt.tight_layout()
+    # plt.show()

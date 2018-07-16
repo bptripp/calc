@@ -87,7 +87,7 @@ class System:
         :param w: width of an image pixel in degrees visual angle
         :param name (optional): Defaults to 'INPUT'
         """
-        self.populations.append(Population(self.input_name, n, 0, w))
+        self.populations.append(Population(self.input_name, n, None, w))
 
     def add(self, name, n, e, w):
         if self.find_population(name) is not None:

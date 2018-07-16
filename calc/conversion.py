@@ -27,7 +27,7 @@ class SystemConstants:
             else:
                 self.w.append(None)
 
-            if population.name == system.input_name:
+            if population.name == system.input_name or population.e is None:
                 self.e.append(None)
             else:
                 self.e.append(tf.constant(float(population.e), name='e_of_{}'.format(population.name)))
