@@ -1,11 +1,10 @@
 import os
 import inspect
-import nibabel
 import numpy as np
-import xml.etree.ElementTree as ET
 import csv
 import json
 from scipy.optimize import curve_fit
+
 
 class Data:
     def __init__(self):
@@ -329,28 +328,28 @@ class InterAreaConnections:
             sites = self.get_M132_injection_sites(self.areas[i])
             mapped = []
             for j in range(len(sites)):
-                M132_SLN = self.get_M132_SLN(sites[j])
-                mapped.append(self.map_SLN_M132_to_FV91(sites[j], M132_SLN))
+                mapped.append(self.map_SLN_M132_to_FV91(sites[j]))
             grid[i,:] = np.mean(mapped, axis=0)
             grid[i,i] = 0
         return grid
 
-    def map_SLN_M132_to_FV91(self, target_M132, M132_SLN):
+    def map_SLN_M132_to_FV91(self, target_M132):
         """
         This implements the equation on pg 1416 of Schmidt et al. (2018).
 
-        :param M132_SLN: result of get_M132_SLN() for a certain target area
         :param M132_target: the target area
         :return: list of SLN for each area in areas_FV91
         """
+        M132_SLN = self.get_M132_SLN(target_M132)
         numerator = np.zeros(len(areas_FV91))
         denominator = np.zeros(len(areas_FV91))
         for source_M132 in M132_SLN.keys():
             FLNe = self.markov.get_FLNe(source_M132, target_M132)
             SLN = M132_SLN[source_M132]
-            fractions = self._get_overlap_fractions(source_M132)
-            numerator += FLNe * SLN * fractions
-            denominator += FLNe * fractions
+            if FLNe and SLN:
+                fractions = self._get_overlap_fractions(source_M132)
+                numerator += FLNe * SLN * fractions
+                denominator += FLNe * fractions
         return np.divide(numerator, denominator)
 
     def _get_overlap_fractions(self, area_M132):
@@ -621,43 +620,16 @@ S18_density = {
 }
 
 """
-Account for spine density vs hierarchy as in: 
-Chaudhuri, Rishidev, et al. "A large-scale circuit mechanism for hierarchical dynamical processing 
-in the primate cortex." Neuron 88.2 (2015): 419-431.
-
-Omit deep neurons in early areas that project to SC: 
-Fries, Wolfgang. "Cortical projections to the superior colliculus in the macaque monkey: a retrograde 
-study using horseradish peroxidase." Journal of Comparative Neurology 230.1 (1984): 55-76.
-Hübener, Mark, Cornelius Schwarz, and Jürgen Bolz. "Morphological types of projection neurons in layer 
-5 of cat visual cortex." Journal of comparative neurology 301.4 (1990): 655-674.
-
-Also omit callosal neurons.
+TODO: omit callosal neurons:
 J. C. Houzel, M. L. Carvalho, and R. Lent, “Interhemispheric connections between primary visual 
 areas: Beyond the midline rule,” Brazilian J. Med. Biol. Res., vol. 35, no. 12, pp. 1441–1453, 2002.
 
 Also account for non-projecting pyramidal cells: 
 Gilbert, Charles D., and TORSTEN N. Wiesel. "Clustered intrinsic connections in cat visual cortex." 
 Journal of Neuroscience 3.5 (1983): 1116-1133.
-
 """
 
 """
-Where possible, connection strengths and origin layers are taken from:
-
-Markov, N. T., Ercsey-Ravasz, M. M., Ribeiro Gomes, A. R., Lamy, C., Magrou, L., Vezoli, 
-J., ... & Sallet, J. (2012). A weighted and directed interareal connectivity matrix for macaque 
-cerebral cortex. Cerebral cortex, 24(1), 17-36.
-
-Additional connections and termination layers are taken from CoCoMac 2.0:
- 
-Bakker, R., Wachtler, T., & Diesmann, M. (2012). CoCoMac 2.0 and the future of tract-tracing 
-databases. Frontiers in neuroinformatics, 6.
-
-A major source for information on inter-laminar connections (within a single area) is: 
-
-T. Binzegger, R. J. Douglas, and K. A. C. Martin, “A quantitative map of the circuit of cat 
-primary visual cortex,” J. Neurosci., vol. 24, no. 39, pp. 8441–8453, 2004.
-
 This code is vision-centric at the moment. Here are some relevant references for other parts of cortex:
  
 Barbas, H., & Rempel-Clower, N. (1997). Cortical structure predicts the pattern of corticocortical 
@@ -673,7 +645,6 @@ distributed functions, 3-47.
 G. N. Elston, “Cortical heterogeneity: Implications for visual processing and polysensory integration,” 
 J. Neurocytol., vol. 31, no. 3–5 SPEC. ISS., pp. 317–335, 2002.
 """
-
 
 def data_folder():
     return os.path.dirname(inspect.stack()[0][1]) + '/data_files'
@@ -1161,10 +1132,10 @@ def synapses_per_neuron(area, source_layer, target_layer):
     n_target_types = 19
 
     # find table of synapses between types summed across all layers
-    totals = np.zeros((n_target_types, n_source_types))
+    totals_across_layers = np.zeros((n_target_types, n_source_types))
     layers = ['1', '2/3', '4', '5', '6']
     for layer in layers:
-        totals = totals + _get_synapses_per_layer_cat_V1(layer)
+        totals_across_layers = totals_across_layers + _get_synapses_per_layer_cat_V1(layer)
 
     # sum over sources and weighted average over targets ...
     source_types = BDM04_excitatory_types[source_layer] # cell types in source layer (regardless of where synapses are)
@@ -1175,9 +1146,9 @@ def synapses_per_neuron(area, source_layer, target_layer):
     total_inputs = np.zeros(n_target_types)
     for i in range(n_source_types):
         if BDM04_sources[i] in source_types:
-            total_inputs_from_source = total_inputs_from_source + totals[:,i]
+            total_inputs_from_source = total_inputs_from_source + totals_across_layers[:,i]
         if BDM04_sources[i] in all_source_types:
-            total_inputs = total_inputs + totals[:,i]
+            total_inputs = total_inputs + totals_across_layers[:,i]
 
     weighted_sum_from_source = 0.
     weighted_sum = 0.
@@ -1199,85 +1170,6 @@ def synapses_per_neuron(area, source_layer, target_layer):
     area_ratio = S18_in_degree[area][col] / S18_in_degree['V1'][col]
 
     return area_ratio * monkey_cat_ratio * in_degree_from_source
-
-
-def _synapses_per_neuron_V1():
-    """
-    :return: Mean # of synapses per neuron across all monkey V1 (from OC82 data)
-    """
-    total_neurons_per_mm2 = 0
-    for value in OC82_n_neurons_per_mm2_V1.values():
-        total_neurons_per_mm2 = total_neurons_per_mm2 + value
-
-    total_synapses_per_mm2 = 0
-    for value in OC82_n_synapses_per_mm2_V1.values():
-        total_synapses_per_mm2 = total_synapses_per_mm2 + value
-
-    return total_synapses_per_mm2 / total_neurons_per_mm2
-
-
-def _synapses_per_neuron_cat_V1():
-    """
-    :return: Mean # of synapses per neuron across all cat V1 (from BDM04 data)
-    """
-    total_synapses_table = np.zeros((19,16))
-    for layer in ['1', '2/3', '4', '5', '6']:
-        total_synapses_table = total_synapses_table + _get_synapses_per_layer_cat_V1(layer)
-
-    total_neurons = 0
-    total_synapses = 0
-    for i in range(19):
-        type = BDM04_targets[i]
-        n_per_hemiphere = BDM04_N_per_type[type]
-        total_neurons = total_neurons + n_per_hemiphere
-        total_synapses = total_synapses + n_per_hemiphere * np.sum(total_synapses_table[i])
-
-    return total_synapses / total_neurons
-
-
-def _get_synapses_per_layer_V1(layer):
-    """
-    :param layer: one of 1, 2/3, 4, 5, 6
-    :return: Table of synapses per layer, from BDM04 cat data, but scaled according
-        to lower mean synapses per neuron in monkey
-    """
-    monkey_cat_ratio = _synapses_per_neuron_V1() / _synapses_per_neuron_cat_V1()
-    return monkey_cat_ratio * _get_synapses_per_layer_cat_V1(layer)
-
-
-def _get_synapses_per_layer_V2(layer, rescale=True):
-    """
-    :param layer: one of 1, 2/3, 4, 5, 6
-    :param rescale: if True (the default), rescale cat V1 data by layer thickness. It isn't clear
-        that this is the right thing to do. For example, it seems doubtful that the relatively
-        sparse extrinsic inputs to L4 are more numerous with thicker L4, as they take up little
-        of the volume. However, synapse density per mm^3 is remarkably uniform across areas and
-        species, so density per mm^2 increases with thickness.
-        DeFelipe, J., Alonso-Nanclares, L., & Arellano, J. I. (2002). Microstructure of the
-        neocortex: comparative aspects. Journal of neurocytology, 31(3-5), 299-316.
-    :return: Table of estimated synapses per layer, based on data from cat V1. More direct
-        information would be useful here. The justification is that cat V1 is much like primate
-        extrastriate areas in terms of neuron density per mm^2 (whereas it is unlike primate V1):
-        Srinivasan, S., Carlo, C. N., & Stevens, C. F. (2015). Predicting visual acuity from the
-        structure of visual cortex. PNAS, 112(25), 7815-7820.
-        Carlo, C. N., & Stevens, C. F. (2013). Structural uniformity of neocortex, revisited.
-        PNAS, 110(4), 1488-1493.
-
-    """
-    if rescale:
-        if layer == '2/3':
-            thickness_V1 = BYK14_thickness_V1['2'] + BYK14_thickness_V1['3A'] + BYK14_thickness_V1['3B']
-        else:
-            thickness_V1 = 0
-            for key in BYK14_thickness_V1.keys():
-                if key.startswith(layer):
-                    thickness_V1 = thickness_V1 + BYK14_thickness_V1[key]
-
-        thickness_V2 = BYK14_thickness_V2[layer]
-
-        return thickness_V2 / thickness_V1 * _get_synapses_per_layer_cat_V1(layer)
-    else:
-        return _get_synapses_per_layer_cat_V1(layer)
 
 
 def _get_synapses_per_layer_cat_V1(layer):
@@ -1308,91 +1200,6 @@ def _get_synapses_per_layer_cat_V1(layer):
         assert len(table) == 19 # expected # of rows
         return np.array(table)
 
-
-def _get_synapses_per_neuron_per_type_cat_V1(type):
-    total = 0
-    total = total + BDM04_synapses_per_neuron_L1.get(type, 0)
-    total = total + BDM04_synapses_per_neuron_L23.get(type, 0)
-    total = total + BDM04_synapses_per_neuron_L4.get(type, 0)
-    total = total + BDM04_synapses_per_neuron_L5.get(type, 0)
-    total = total + BDM04_synapses_per_neuron_L6.get(type, 0)
-    return total
-
-
-def _get_n_neurons_per_mm_2_cat_V1(type):
-    return BDM04_N_per_type[type] / BDM04_total_area_hemisphere
-
-
-def _get_synapses_per_mm_2_V1(layer):
-    #TODO: test
-    total = 0
-    for key in OC82_n_synapses_per_mm2_V1.keys():
-        if key.startswith(layer):
-            total = total + OC82_n_synapses_per_mm2_V1[key]
-    return total
-
-def _get_synapses_per_neuron_cat_V1():
-    neurons = 0
-    synapses = 0
-    for key in BDM04_N_per_type.keys():
-        nt = BDM04_N_per_type[key] / BDM04_total_area_hemisphere
-        neurons = neurons + nt
-        synapses = synapses + nt * _get_synapses_per_neuron_per_type_cat_V1(key)
-
-    # print('cat neurons: {} synapses: {}'.format(neurons, synapses))
-    return synapses / neurons
-
-
-def _get_synapses_per_neuron_V1():
-    #TODO: difference seems consistent with Colonnier & O'Kusky (1981) RCB
-    #TODO: see Carlo & Stevens (2012)
-    neurons = 0
-    for value in OC82_n_neurons_per_mm2_V1.values():
-        neurons = neurons + value
-
-    synapses = 0
-    for value in OC82_n_synapses_per_mm2_V1.values():
-        synapses = synapses + value
-
-    # print('monkey neurons: {} synapses: {}'.format(neurons, synapses))
-    return synapses / neurons
-
-
-def _plot_synapses_per_layer_per_mm_2():
-    layers = ['1', '2/3', '4', '5', '6']
-
-    monkey_counts = []
-    for layer in layers:
-        count = 0
-        for key in OC82_n_synapses_per_mm2_V1.keys():
-            if key.startswith(layer): 
-                count = count + OC82_n_synapses_per_mm2_V1[key]
-        monkey_counts.append(count)
-
-    cat_counts = []
-    for layer in layers: 
-        if layer == '1': 
-            synapses_per_neuron = BDM04_synapses_per_neuron_L1
-        elif layer == '23': 
-            synapses_per_neuron = BDM04_synapses_per_neuron_L23
-        elif layer == '4':
-            synapses_per_neuron = BDM04_synapses_per_neuron_L4
-        elif layer == '5': 
-            synapses_per_neuron = BDM04_synapses_per_neuron_L5
-        else:
-            synapses_per_neuron = BDM04_synapses_per_neuron_L6
-
-        count = 0
-        for key in synapses_per_neuron.keys():
-            neurons = BDM04_N_per_type[key] / BDM04_total_area_hemisphere
-            count = count + neurons * synapses_per_neuron[key]
-        cat_counts.append(count)
-
-    import matplotlib.pyplot as plt
-    plt.plot(monkey_counts)
-    plt.plot(cat_counts)
-    plt.legend(['monkey', 'cat'])
-    plt.show()
 
 
 """
@@ -1433,157 +1240,6 @@ def get_RF_size(area):
     if area in RF_diameter_5_degrees_eccentricity.keys():
         result = RF_diameter_5_degrees_eccentricity[area]
     return result
-
-class Yerkes19:
-    """
-    TODO
-    """
-
-    def __init__(self):
-        folder = data_folder()
-
-        midthickness_data = nibabel.load(folder + '/donahue/MacaqueYerkes19.R.midthickness.32k_fs_LR.surf.gii')
-        self.midthickness_points \
-            = np.array(midthickness_data.get_arrays_from_intent('NIFTI_INTENT_POINTSET')[0].data)
-        self.triangles \
-            = np.array(midthickness_data.get_arrays_from_intent('NIFTI_INTENT_TRIANGLE')[0].data)
-
-        very_inflated_data = nibabel.load(folder + '/donahue/MacaqueYerkes19.R.very_inflated.32k_fs_LR.surf.gii')
-        self.very_inflated_points \
-            = np.array(very_inflated_data.get_arrays_from_intent('NIFTI_INTENT_POINTSET')[0].data)
-
-        #TODO: make this automatically
-        label_tree = ET.parse(folder + '/donahue/MarkovCC12_M132_91-area.32k_fs_LR.dlabel.xml')
-        root = label_tree.getroot()
-
-        self.areas = []
-        for label_name in root.findall('Matrix/MatrixIndicesMap/NamedMap/LabelTable/Label'):
-            # print(label.attrib)
-            self.areas.append(label_name.text)
-
-        point_inds = []
-        for brain_model in root.findall('Matrix/MatrixIndicesMap/BrainModel'):
-            if brain_model.attrib['BrainStructure'] == 'CIFTI_STRUCTURE_CORTEX_RIGHT':
-                vi = brain_model.find('VertexIndices')
-                for s in vi.text.split():
-                    point_inds.append(int(s))
-        self.point_inds = np.array(point_inds)
-
-        label_data = nibabel.load(folder + '/donahue/MarkovCC12_M132_91-area.32k_fs_LR.dlabel.nii')
-        self.point_area_inds = np.array(label_data.get_data()).flatten()[:len(self.point_inds)]
-        self._assign_triangles()
-
-    def _assign_triangles(self):
-        expanded_point_area_inds = np.zeros(np.max(self.point_inds)+1)
-        for i in range(len(self.point_inds)):
-            expanded_point_area_inds[self.point_inds[i]] = self.point_area_inds[i]
-
-        self.triangle_area_inds = np.zeros(self.triangles.shape[0]) #unassigned
-        for i in range(self.triangles.shape[0]):
-            vertex_area_inds = np.zeros(3)
-            for j in range(3):
-                vertex_area_inds[j] = expanded_point_area_inds[self.triangles[i,j]]
-
-            if vertex_area_inds[0] == vertex_area_inds[1] or vertex_area_inds[0] == vertex_area_inds[2]:
-                self.triangle_area_inds[i] = vertex_area_inds[0]
-            elif vertex_area_inds[1] == vertex_area_inds[2]:
-                self.triangle_area_inds[i] = vertex_area_inds[1]
-
-    def get_points_in_area(self, area, inflated=False):
-        assert area in self.areas, '%s is not in the list of cortical areas' % area
-
-        area_ind = self.areas.index(area)
-        point_inds = [self.point_inds[i] for i, x in enumerate(self.point_area_inds) if x == area_ind]
-
-        if inflated:
-            points = np.array([self.very_inflated_points[i] for i in point_inds])
-        else:
-            points = np.array([self.midthickness_points[i] for i in point_inds])
-
-        return points
-
-    def get_surface_area_total(self):
-        surface_area = 0
-
-        for triangle in self.triangles:
-            a = self.midthickness_points[triangle[0]]
-            b = self.midthickness_points[triangle[1]]
-            c = self.midthickness_points[triangle[2]]
-            surface_area = surface_area + _get_triangle_area(a, b, c)
-
-        return surface_area
-
-    def get_surface_area(self, area):
-        assert area in self.areas, '%s is not in the list of cortical areas' % area
-
-        area_ind = self.areas.index(area)
-
-        surface_area = 0
-        for i in range(self.triangles.shape[0]):
-            if self.triangle_area_inds[i] == area_ind:
-                triangle = self.triangles[i]
-                a = self.midthickness_points[triangle[0]]
-                b = self.midthickness_points[triangle[1]]
-                c = self.midthickness_points[triangle[2]]
-                surface_area = surface_area + _get_triangle_area(a, b, c)
-
-        return surface_area
-
-    def get_centre(self, area):
-        points = self.get_points_in_area(area, inflated=False)
-        return np.mean(points, axis=0)
-
-
-def _get_triangle_area(a, b, c):
-    v1 = b - a
-    v2 = c - a
-    return np.linalg.norm(np.cross(v1, v2)) / 2.
-
-
-yerkes19 = Yerkes19()
-e07 = E07()
-
-
-M14_FV91 = {
-    # TEO is roughly PITd and PITv (Zeki, 1996), and it looks like Markov TEO injection may be in PITd.
-    # On the other hand TEOm position relative to TEO is similar to PITd relative to PITv. To be conservative,
-    # we'll map TEO to PITd and consider TEOm to lack a corresponding area.
-    'TEO': 'PITd',
-    'TEpd': 'CITd',
-    'TEpv': 'CITv',
-    'TEad': 'AITd',
-    'TEav': 'AITv',
-    'MST': 'MSTd',  # no injection into MST, FLNe is sum across MSTl, MSTd
-    '7A': '7a',
-    '7B': '7b',
-    'V6': 'PO',  # this isn't a great correspondence; see Shipp et al. 2001
-}
-
-
-def map_M14_to_FV91(area):
-    """
-    :param area: Area name from Markov et al. parcellation
-    :return: Name of most similar area from CoCoMac
-    """
-
-    if area in M14_FV91.keys():
-        area = M14_FV91[area]
-
-    return area
-
-
-def map_FV91_to_M14(area):
-    """
-    :param area: Area name from CoCoMac
-    :return: Name of most similar area from Markov et al.
-    """
-
-    FV91_M14 = dict((M14_FV91[key], key) for key in M14_FV91)
-
-    if area in FV91_M14.keys():
-        area = FV91_M14[area]
-
-    return area
 
 
 class CoCoMac:
@@ -1772,32 +1428,6 @@ class CoCoMac:
             fraction = asymmetric_synapses_per_layer[i] / total
             print('Cell layer: {} excitatory synapses: {}%'.format(layers[i], int(round(fraction*100))))
 
-"""
-We constrain the FLNe only for connections in Markov et al. (2012). Reasonable constraints could be 
-added for other connections in several ways:
- 
-1) Other quantitative datasets may provide some additional coverage, e.g. visual prefrontal afferents 
-data in Table 2 of Hilgetag, Medalla, Beul, and Barbas, “The primate connectome in context: Principles 
-of connections of the cortical visual system,” Neuroimage, vol. 134, pp. 685–702, 2016.
-
-2) The distance rule of Ercsey-Ravasz, Markov, Lamy, VanEssen, Knoblauch, Toroczkai, 
-and Kennedy, “A Predictive Network Model of Cerebral Cortical Connectivity Based on a Distance Rule,” 
-Neuron, vol. 80, no. 1, pp. 184–197, 2013. However this requires tracing the shortest path through white matter. 
-(The authors seem to have used this software to do so: http://exploranova.info/m9732/) Also, while there is a 
-correlation, there is also plenty of spread (see their Figure 2A). 
-
-3) Hilgetag et al. (2016) suggest an alternative rule based on differences in cell density, and give a table of 
-densities for a number of areas. The correlation seems good and this is simpler to do than (2) but there are 
-limitations. First, they have only shown the correlation for their small "prefrontal visual afferents" dataset. 
-Second, they don't give densities for all areas. This could be explored further by testing the correlation on the 
-Markov et al. 29x29 matrix with available cell densities. If it looks promising, other densities could be 
-guessed based on curve fit in D. J. Cahalane, C. J. Charvet, and B. L. Finlay, “Systematic, balancing gradients 
-in neuron density and number across the primate isocortex,” Front. Neuroanat., vol. 6, no. July, pp. 1–12, 2012.
-Or a Yerkes19 flatmap could be mapped to the flatmap in C. E. Collins, D. C. Airey, N. a Young, D. B. Leitch, and 
-J. H. Kaas, “Neuron densities vary across and within cortical areas in primates.,” Proc. Natl. Acad. Sci. U. S. A., 
-vol. 107, no. 36, pp. 15927–32, Sep. 2010.
-"""
-
 
 class Markov:
     """
@@ -1811,15 +1441,6 @@ class Markov:
 
     def is_injection_site(self, target):
         return target in self.target_FLN
-
-    def get_sources_with_fallback(self, target):
-        if self.is_injection_site(target):
-            return self.get_sources(target)
-        else:
-            c = CoCoMac()
-            sources = c.get_source_areas(map_M14_to_FV91(target))
-            sources = [map_FV91_to_M14(source) for source in sources]
-            return [source for source in sources if source in yerkes19.areas]
 
     def get_sources(self, target):
         result = []
@@ -1837,13 +1458,7 @@ class Markov:
         if result:
             return np.mean(result)
         else:
-            # calculate estimate from regression with inter-area distance
-            # y = Yerkes19()
-            source_centre = yerkes19.get_centre(source)
-            target_centre = yerkes19.get_centre(target)
-            distance = np.linalg.norm(source_centre - target_centre)
-            log_FLNe = - 4.38850006 - 0.11039442*distance
-            return np.exp(log_FLNe)
+            return None
 
     def get_SLN(self, source, target):
         result = []
@@ -1906,10 +1521,6 @@ def check_data():
     pass
 
 
-def get_areas():
-    return yerkes19.areas
-
-
 def get_layers(area):
     # Schmidt et al. (2018) say that TH lacks L4 but don't give a reference. However
     # Felleman & Van Essen (1991) say that several connections to TH terminate on L4
@@ -1963,212 +1574,6 @@ def _total_thickness(thickness):
     for key in thickness.keys():
         total = total + thickness[key]
     return total
-
-
-def _get_thickness_V2(layer):
-    """
-    :param layer: layer name
-    :return: Average layer thickness from two examples (Balaram et al. and Shepherd), rescaled
-        so that V1 examples from the same sources match population averages from O'Kusky et al.
-    """
-    assert layer in get_layers('V2')
-
-    total_thickness_V1 = _total_thickness(OC82_thickness_V1)
-    total_thickness_V1_BYK = _total_thickness(BYK14_thickness_V1)
-    total_thickness_V1_S = _total_thickness(S03_thickness_V1)
-
-    thickness_BYK = BYK14_thickness_V2[layer] * total_thickness_V1 / total_thickness_V1_BYK
-    thickness_S = S03_thickness_V2[layer] * total_thickness_V1 / total_thickness_V1_S
-
-    return (thickness_BYK + thickness_S) / 2
-
-
-def _get_neurons_per_mm3_V1(layer):
-    pass
-
-
-def _get_neurons_per_mm2_V1(layer):
-    """
-    :param layer: Name of a V1 layer.
-    :return: Neurons per square mm of cortical surface in layer.
-    """
-    assert layer in get_layers('V1')
-
-    n23 = OC82_n_neurons_per_mm2_V1['2/3-1'] \
-          + OC82_n_neurons_per_mm2_V1['2/3-2'] \
-          + OC82_n_neurons_per_mm2_V1['2/3-3']
-
-    # we will divide layer 2/3 according to thicknesses in Balaram et al.
-    t2 = BYK14_thickness_V1['2']
-    t3A = BYK14_thickness_V1['3A']
-    t3B = BYK14_thickness_V1['3B']
-
-    if layer == '2/3':
-        result = round(n23 * (t2 + t3A) / (t2 + t3A + t3B))
-    elif layer == '3B':
-        result = round(n23 * t3B / (t2 + t3A + t3B))
-    else:
-        result = 0
-        for key in OC82_n_neurons_per_mm2_V1.keys():
-            if key.startswith(layer):
-                result = result + OC82_n_neurons_per_mm2_V1[key]
-
-    return result
-
-
-def _get_neurons_per_mm2_V2(layer):
-    """
-    :param layer: Name of V2 layer
-    :return: Estimate of neurons per square mm of cortical surface in layer. This is based on
-        V1 estimates, scaled by relative thickness of the corresponding V2 layer.
-        Following Balaram et al. (see also refs therein) we group 4A and 4B with layer 3 for this
-        purpose. This is probably not highly accurate, as cells are particularly small in V1
-        (see refs in Collins, C. E., Airey, D. C., Young, N. A., Leitch, D. B., & Kaas, J. H. (2010).
-        Neuron densities vary across and within cortical areas in primates. PNAS, 107(36), 15927-15932.)
-        #TODO: fix this using Carlo & Stevens and Srinivasan, Carlo & Stevens
-    """
-    result = None
-    if layer == '2/3':
-        sublayers = ['2/3', '3B', '4A', '4B']
-
-        n_V1 = 0
-        thickness_V1 = 0
-        for sublayer in sublayers:
-            n_V1 = n_V1 + _get_neurons_per_mm2_V1(sublayer)
-            thickness_V1 = thickness_V1 + _get_thickness_V1(sublayer)
-
-        # print('thickness V2 {} V1 {} #V1 {}'.format(_get_thickness_V2('2/3'), thickness_V1, n_V1))
-        result = n_V1 * _get_thickness_V2('2/3') / thickness_V1
-    elif layer == '4':
-        sublayers = ['4Calpha', '4Cbeta']
-
-        n_V1 = 0
-        thickness_V1 = 0
-        for sublayer in sublayers:
-            n_V1 = n_V1 + _get_neurons_per_mm2_V1(sublayer)
-            thickness_V1 = thickness_V1 + _get_thickness_V1(sublayer)
-
-        result = n_V1 * _get_thickness_V2('2/3') / thickness_V1
-    else:
-        result = _get_neurons_per_mm2_V1(layer) * _get_thickness_V2(layer) / _get_thickness_V1(layer)
-
-    return result
-
-
-# def get_num_neurons(area, layer):
-#     #TODO: replace with Schmidt et al.
-#     """
-#     Cortical thickness and cell density are negatively correlated in visual cortex in many primate
-#     species:
-#
-#     la Fougère, C., Grant, S., Kostikov, A., Schirrmacher, R., Gravel, P., Schipper, H. M., ... &
-#     Thiel, A. (2011). Where in-vivo imaging meets cytoarchitectonics: the relationship between cortical
-#     thickness and neuronal density measured with high-resolution [18 F] flumazenil-PET. Neuroimage, 56(3), 951-960.
-#
-#     Cahalane, D. J., Charvet, C. J., & Finlay, B. L. (2012). Systematic, balancing gradients in neuron density
-#     and number across the primate isocortex. Frontiers in neuroanatomy, 6.
-#
-#     TODO: docs
-#     :param area:
-#     :param layer:
-#     :return:
-#
-#     """
-#     # if yerkes19 is None:
-#     #     yerkes19 = Yerkes19()
-#
-#     surface_area = yerkes19.get_surface_area(area)
-#
-#     if area == 'V1':
-#         density = _get_neurons_per_mm2_V1(layer)
-#     else:
-#         density = _get_neurons_per_mm2_V2(layer)
-#
-#     # We multiply by 0.75 to match fraction excitatory cells; see Hendry et al. (1987) J Neurosci
-#     return int(0.75 * surface_area * density)
-
-
-def calculate_mean_ascending_SLN():
-    """
-    Calculates mean %SLN for connections that ascend the FV91 hierarchy.
-    This mean can be used as a fallback for connections not characterized
-    by Markov et al.
-
-    The result is 65.42%
-    """
-
-    sources, targets, percents = _read_supragranular_layers_percent()
-    d = []
-    p = []
-    y = Yerkes19()
-
-    for i in range(len(sources)):
-        if sources[i] in y.areas and targets[i] in y.areas:
-            s = map_M14_to_FV91(sources[i])
-            t = map_M14_to_FV91(targets[i])
-            if s in FV91_hierarchy and t in FV91_hierarchy and FV91_hierarchy[t] > FV91_hierarchy[s]:
-                source_centre = y.get_centre(sources[i])
-                target_centre = y.get_centre(targets[i])
-                distance = np.linalg.norm(source_centre - target_centre)
-                d.append(distance)
-                p.append(percents[i])
-                print('{}->{}: {}'.format(sources[i], targets[i], distance))
-
-    print('Mean %SLN: {}'.format(np.mean(p)))
-
-    import matplotlib.pyplot as plt
-    plt.scatter(d, p)
-    plt.title('Not much correlation between %SLN and inter-area distance')
-    plt.show()
-
-
-def calculate_flne_vs_distance():
-    """
-    Result:
-    Correlation between distance and log(FLNe): -0.4464287686487642. Regression slope: -0.11039442; bias: -4.38850006
-    """
-    import pickle
-
-    # sources, targets, fractions = _read_fraction_labelled_neurons_extrinsic()
-    # y = Yerkes19()
-    # d = []
-    # f = []
-    #
-    # for i in range(len(sources)):
-    #     if sources[i] in y.areas and targets[i] in y.areas:
-    #         source_centre = y.get_centre(sources[i])
-    #         target_centre = y.get_centre(targets[i])
-    #         distance = np.linalg.norm(source_centre - target_centre)
-    #         d.append(distance)
-    #         f.append(fractions[i])
-    #         print('{}->{}: {}'.format(sources[i], targets[i], distance))
-    #
-    # with open('flne-and-distance.pkl', 'wb') as file:
-    #     pickle.dump((d, f), file)
-
-    with open('flne-and-distance.pkl', 'rb') as file:
-        (d, f) = pickle.load(file)
-
-    import matplotlib.pyplot as plt
-
-    f = np.array(f)
-    d = np.array(d)
-
-    a = np.ones((len(f),2))
-    a[:, 0] = d
-
-    r = np.corrcoef(d, np.log(f))
-
-    x, res, rank, s = np.linalg.lstsq(a, np.log(f))
-    approx = np.matmul(a, x)
-
-    print('Correlation between distance and log(FLNe): {}. Regression coefficients (slope; bias): {}'.format(r[0, 1], x))
-
-    plt.plot(d, np.log(f), '.')
-    plt.plot(d, approx, 'k.')
-    plt.xlabel('inter-area distance (mm)')
-    plt.ylabel('log(FLNe)')
-    plt.show()
 
 
 if __name__ == '__main__':
