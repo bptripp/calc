@@ -32,6 +32,7 @@ from calc.data import areas_FV91, E07
 def get_stride_pattern(system, max_cumulative_stride=512, best_of=10):
     best_distance = 1e10
     best_pattern = None
+    distances = []
 
     for i in range(best_of):
         print('Making stride pattern {} of {}'.format(i, best_of))
@@ -39,11 +40,12 @@ def get_stride_pattern(system, max_cumulative_stride=512, best_of=10):
         # candidate.set_hints()
         candidate.fill()
         distance = candidate.distance_from_hints()
+        distances.append(distance)
         if distance < best_distance:
             best_distance = distance
             best_pattern = candidate
 
-    return best_pattern
+    return best_pattern, distances
 
 class StridePattern:
 
@@ -364,13 +366,13 @@ if __name__ == '__main__':
     # path = longest_path(system, 'V4_5')
     # print(path)
 
-    candidate = get_stride_pattern(system, best_of=500)
+    candidate, distances = get_stride_pattern(system, best_of=500)
     # candidate = StridePattern(system, 32)
     # candidate.set_hints()
     # candidate.fill()
 
     with open('stride-pattern.pkl', 'wb') as file:
-        pickle.dump({'system': system, 'strides': candidate}, file)
+        pickle.dump({'system': system, 'strides': candidate, 'distances': distances}, file)
 
 
     # print(candidate.strides)
