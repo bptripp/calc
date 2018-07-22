@@ -11,11 +11,10 @@ from calc.examples.example_systems import make_big_system
 from calc.analysis.custom_layers import Scale
 from calc.analysis.densenet121 import DenseNet
 
-# TODO: fix FLNe for CNNs and inter-laminar connections
-
 """
 For visualizing architectures of cortical models and standard convnets.   
 """
+
 
 def plot_FLNe(system, figsize=(8,6)):
     layers = []
@@ -30,7 +29,9 @@ def plot_FLNe(system, figsize=(8,6)):
             # print('f: {}'.format(projection.f))
             FLNe[i,j] = projection.f
         else:
-            FLNe[i,j] = 1 #TODO: fix
+            # Make proportional to presynaptic population size (this is fairly sensible for current inter-laminar
+            # structure, i.e. L4->L2/3, L4->L5, L2/3->L5, but may not be in general.
+            FLNe[i,j] = projection.origin.n
 
     fig, ax = plt.subplots(figsize=figsize)
     im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
@@ -328,24 +329,22 @@ if __name__ == '__main__':
     # figsize=(7,7)
     # system = get_system('VGG-16')
     # figsize=(4,4)
-    # system = get_system('DenseNet121')
-    # figsize=(8,8)
+    system = get_system('DenseNet121')
+    figsize=(10,10)
     # system = get_system('macaque')
     # figsize=(10,10)
-    # plot_FLNe(system, figsize=figsize)
+    plot_FLNe(system, figsize=figsize)
 
     # plot_population_sizes()
     # plot_feature_maps()
 
     # network = get_network('InceptionV3')
+    # network = get_network('macaque')
     # network.print()
     # # network = get_network('DenseNet121')
     # get_network('VGG-16')
     # plot_kernel_sizes()
     # plot_stride()
 
-    system = get_system('ResNet50')
-    figsize=(7,7)
-    plot_FLNe(system, figsize=(8, 6))
 
 
