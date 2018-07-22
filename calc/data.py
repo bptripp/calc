@@ -1,4 +1,6 @@
 import os
+# import sys
+# sys.path.append('/Users/bptripp/lib/multi-area-model/')
 import inspect
 import numpy as np
 import csv
@@ -9,12 +11,16 @@ from scipy.optimize import curve_fit
 class Data:
     def __init__(self):
         iac = InterAreaConnections()
-        self.FLNe = iac.get_interpolated_FLNe()
-        self.SLN = iac.get_interpolated_SLN()
+        self.FLNe = iac.get_interpolated_FLNe_Schmidt()
+        self.SLN = iac.get_interpolated_SLN_Schmidt()
         self.connections = iac.get_connectivity_grid()
 
         histogram = np.array(FS09_synapses_per_connection)
         self.synapses_per_connection = np.dot(histogram[:,0], histogram[:,1]) / np.sum(histogram[:,1])
+
+        with open('/Users/bptripp/lib/multi-area-model/multiarea_model/data_multiarea/default_Data_Model_.json', 'r') as f:
+            self.dat = json.load(f)
+
 
     def get_areas(self):
         """
@@ -66,6 +72,14 @@ class Data:
         # We multiply by 0.75 to match fraction excitatory cells; see Hendry et al. (1987) J Neurosci
         return int(0.75 * mm2 * D_l_A)
 
+    # def get_neuron_numbers_Schmidt(self, area, layer):
+    #     if layer == '2/3':
+    #         population = '23E'
+    #     else:
+    #         population = layer + 'E'
+    #
+    #     return self.dat['realistic_neuron_numbers'][area][population]
+
     def get_receptive_field_size(self, area):
         """
         :param area: A visual area
@@ -89,7 +103,11 @@ class Data:
         :param target_layer: A cortical layer
         :return: Estimated number of feedforward inputs per neuron from outside this area
         """
-        spn = synapses_per_neuron(area, 'extrinsic', target_layer)
+        if area == 'V1':
+            spn = synapses_per_neuron(area, 'thalamocortical', target_layer)
+        else:
+            spn = synapses_per_neuron(area, 'extrinsic', target_layer)
+
         return spn / self.synapses_per_connection
 
     def get_source_areas(self, target_area, feedforward_only=False):
@@ -146,6 +164,9 @@ class InterAreaConnections:
         self.cocomac = cocomac
         self.markov = markov
         self.areas = areas_FV91
+
+        with open('/Users/bptripp/lib/multi-area-model/multiarea_model/data_multiarea/default_Data_Model_.json', 'r') as f:
+            self.dat = json.load(f)
 
     def get_connectivity_grid(self):
         """
@@ -388,6 +409,40 @@ class InterAreaConnections:
             result[source] = self.markov.get_SLN(source, target)
         return result
 
+    def get_interpolated_SLN_Schmidt(self):
+        n = len(self.areas)
+        result = np.nan * np.zeros((n,n))
+        for i in range(n):
+            d = self.dat['SLN_Data'][self.areas[i]]
+            for j in range(n):
+                if self.areas[j] in d:
+                    # print('{} {}'.format(self.areas[i], self.areas[j]))
+                    result[i,j] = d[self.areas[j]]
+
+        result = np.multiply(result, self.get_connectivity_grid())
+        result[np.where(result == 0)] = np.nan
+        result = result * 100
+        return result
+
+    def get_interpolated_FLNe_Schmidt(self):
+        n = len(self.areas)
+        interpolated_FLNe = np.zeros((n,n))
+        for i in range(n):
+            d = self.dat['FLN_completed'][self.areas[i]]
+            for j in range(n):
+                if self.areas[j] in d:
+                    interpolated_FLNe[i,j] = d[self.areas[j]]
+
+        result = np.multiply(interpolated_FLNe, self.get_connectivity_grid())
+
+        # for rows from Markov et al., recover sum of FLNe from before removing dubious connections
+        remapped_areas = ['V1', 'V2', 'V4', 'MSTd', 'DP', 'CITv', 'FEF', '7a', 'STPp', 'STPa', '46']
+        for i in range(n):
+            if self.areas[i] in remapped_areas:
+                result[i,:] = result[i,:] / np.sum(interpolated_FLNe[i,:])
+
+        return result
+
 
 def sigmoid(x, centre, gain):
     """
@@ -407,6 +462,7 @@ Data from M. Schmidt, R. Bakker, C. C. Hilgetag, M. Diesmann, and S. J. van Alba
 macaque visual cortex,” Brain Struct. Funct., vol. 223, no. 3, pp. 1409–1435, 2018.
 """
 
+#TODO: I'm using intrinsic as total of inter-laminar connections comparable to Binzegger
 # (intrinsic, extrinsic) for (2/3E, 2/3I, 4E, 4I, 5E, 5I, 6E, 6I)
 S18_in_degree = {
     'V1': [3550.00,1246.00,2885.00,1246.00,1975.00,1246.00,2860.00,1246.00,4100.00,1246.00,1632.00,1246.00,2008.00,1246.00,1644.00,1246.00],
@@ -900,7 +956,8 @@ BDM04_excitatory_types = {
     '4': ['ss4(L4)', 'ss4(L2/3)', 'p4'],
     '5': ['p5(L2/3)', 'p5(L5/6)'],
     '6': ['p6(L4)', 'p6(L5/6)'],
-    'extrinsic': ['X/Y'],
+    'thalamocortical': ['X/Y'],
+    'extrinsic': ['as'],
     'all': ['sp1', 'p2/3', 'ss4(L4)', 'ss4(L2/3)', 'p4', 'p5(L2/3)', 'p5(L5/6)', 'p6(L4)', 'p6(L5/6)', 'X/Y', 'as']
 }
 
@@ -1164,7 +1221,8 @@ def synapses_per_neuron(area, source_layer, target_layer):
     in_degree = weighted_sum / total_weight
 
     col = 4 * ['2/3', '4', '5', '6'].index(target_layer) # column of S18_in_degree for extrinsic inputs to excitatory cells
-    monkey_cat_ratio = S18_in_degree['V1'][col] / in_degree
+    monkey_in_degree = S18_in_degree['V1'][col] + S18_in_degree['V1'][col+1]
+    monkey_cat_ratio = monkey_in_degree / in_degree
 
     # For areas other than V1, scale by in-degree of target layer estimated by Schmidt et al.
     area_ratio = S18_in_degree[area][col] / S18_in_degree['V1'][col]
@@ -1527,7 +1585,8 @@ def get_layers(area):
     # (F pattern in their Table 5).
 
     if area == 'V1':
-        return ['1', '2/3', '3B', '4A', '4B', '4Calpha', '4Cbeta', '5', '6']
+        # return ['1', '2/3', '3B', '4A', '4B', '4Calpha', '4Cbeta', '5', '6']
+        return ['1', '2/3', '4A', '4B', '4Calpha', '4Cbeta', '5', '6']
     else:
         return ['1', '2/3', '4', '5', '6']
 
@@ -1579,6 +1638,38 @@ def _total_thickness(thickness):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     data = Data()
+
+    # n1 = []
+    # n2 = []
+    # for area in data.get_areas():
+    #     print(area)
+    #     if area != 'V1':
+    #         an1 = 0
+    #         an2 = 0
+    #         for layer in ['2/3', '4', '5', '6']:
+    #             an1 += data.get_num_neurons(area, layer)
+    #             an2 += data.get_neuron_numbers_Schmidt(area, layer)
+    #             n1.append(data.get_num_neurons(area, layer))
+    #             n2.append(data.get_neuron_numbers_Schmidt(area, layer))
+    #         # n1.append(an1)
+    #         # n2.append(an2)
+    # print(np.corrcoef(n1, n2))
+    # plt.scatter(n1, n2)
+    # plt.show()
+
+    sum1 = []
+    sum2 = []
+    for area in data.get_areas():
+        sum1.append(S18_density[area][1] * S18_surface_area[area])
+        s2 = 0
+        for layer in data.get_layers(area):
+            s2 += data.get_num_neurons(area, layer)
+        sum2.append(s2)
+
+    print(np.corrcoef(sum1, sum2))
+    plt.scatter(sum1, sum2)
+    plt.show()
+
 
     # #TODO: move to unit test
     # for area in areas_FV91:
@@ -1638,41 +1729,66 @@ if __name__ == '__main__':
     # plt.plot([30, 60], [np.mean(densities[far_V1]), np.mean(densities[far_V1])])
     # plt.show()
 
-    iac = InterAreaConnections()
-    plt.imshow(iac.get_connectivity_grid())
-    plt.show()
+    # iac = InterAreaConnections()
+    # FLNe = iac.get_interpolated_FLNe()
+    # FLNe2 = iac.get_interpolated_FLNe_Schmidt()
+    #
+    # # print(np.sum(FLNe, axis=1))
+    # # print(np.sum(FLNe2, axis=1))
+    #
+    # plt.figure()
+    # plt.subplot(211)
+    # # SLN = iac.get_interpolated_SLN()
+    # # plt.imshow(SLN, vmin=0, vmax=100)
+    # # plt.imshow(np.log10(FLNe))
+    # plt.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
+    # plt.subplot(212)
+    # # SLN2 = iac.get_interpolated_SLN_Schmidt()
+    # # plt.imshow(SLN2, vmin=0, vmax=100)
+    # # plt.imshow(np.log10(FLNe2))
+    # plt.imshow(np.log10(FLNe2), vmin=np.log10(.000001), vmax=0)
+    # plt.show()
+    # #
+    # # plt.scatter(FLNe.flatten(), FLNe2.flatten())
+    # # plt.show()
 
-    SLN = iac.get_interpolated_SLN()
-    fig, ax = plt.subplots()
-    im = ax.imshow(SLN, vmin=0, vmax=100)
-    ax.set_xticks(np.arange(len(data.get_areas())))
-    ax.set_yticks(np.arange(len(data.get_areas())))
-    ax.set_xticklabels(data.get_areas(), fontsize=7)
-    ax.set_yticklabels(data.get_areas(), fontsize=7)
-    plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
-             rotation_mode="anchor")
-    cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
-    cbar.ax.set_ylabel(r'SLN', rotation=-90, va="bottom", fontsize=8)
-    cbar.ax.tick_params(labelsize=8)
-    plt.xlabel('Source area')
-    plt.ylabel('Target area')
-    plt.show()
 
-    FLNe = iac.get_interpolated_FLNe()
-    fig, ax = plt.subplots()
-    im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
-    ax.set_xticks(np.arange(len(data.get_areas())))
-    ax.set_yticks(np.arange(len(data.get_areas())))
-    ax.set_xticklabels(data.get_areas(), fontsize=7)
-    ax.set_yticklabels(data.get_areas(), fontsize=7)
-    plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
-             rotation_mode="anchor")
-    cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
-    cbar.ax.set_ylabel(r'log$_{10}$(FLNe)', rotation=-90, va="bottom", fontsize=8)
-    cbar.ax.tick_params(labelsize=8)
-    plt.xlabel('Source area')
-    plt.ylabel('Target area')
-    plt.show()
+
+    # iac = InterAreaConnections()
+    # plt.imshow(iac.get_connectivity_grid())
+    # plt.show()
+    #
+    # SLN = iac.get_interpolated_SLN()
+    # fig, ax = plt.subplots()
+    # im = ax.imshow(SLN, vmin=0, vmax=100)
+    # ax.set_xticks(np.arange(len(data.get_areas())))
+    # ax.set_yticks(np.arange(len(data.get_areas())))
+    # ax.set_xticklabels(data.get_areas(), fontsize=7)
+    # ax.set_yticklabels(data.get_areas(), fontsize=7)
+    # plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
+    #          rotation_mode="anchor")
+    # cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
+    # cbar.ax.set_ylabel(r'SLN', rotation=-90, va="bottom", fontsize=8)
+    # cbar.ax.tick_params(labelsize=8)
+    # plt.xlabel('Source area')
+    # plt.ylabel('Target area')
+    # plt.show()
+    #
+    # FLNe = iac.get_interpolated_FLNe()
+    # fig, ax = plt.subplots()
+    # im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
+    # ax.set_xticks(np.arange(len(data.get_areas())))
+    # ax.set_yticks(np.arange(len(data.get_areas())))
+    # ax.set_xticklabels(data.get_areas(), fontsize=7)
+    # ax.set_yticklabels(data.get_areas(), fontsize=7)
+    # plt.setp(ax.get_xticklabels(), rotation=90, ha="center", va='center',
+    #          rotation_mode="anchor")
+    # cbar = ax.figure.colorbar(im, ax=ax, shrink=.5)
+    # cbar.ax.set_ylabel(r'log$_{10}$(FLNe)', rotation=-90, va="bottom", fontsize=8)
+    # cbar.ax.tick_params(labelsize=8)
+    # plt.xlabel('Source area')
+    # plt.ylabel('Target area')
+    # plt.show()
 
     # logFLNe = np.log10(FLNe).flatten()
     # dist = np.array(S18_distance).flatten()
