@@ -1,8 +1,5 @@
 # Example systems
 
-# TODO: looks like bug in layer-5 # units outside v1 and v2?
-# TODO: fraction of input to L4 V1 from LGN vs # extrinsic inputs
-
 from calc.system import System
 from calc.stride import StridePattern
 from calc.data import Data
@@ -11,6 +8,7 @@ from calc.optimization import test_stride_pattern
 
 data = Data()
 
+
 def add_areas(system, cortical_areas):
     for area in cortical_areas:
         layers = data.get_layers(area)
@@ -18,7 +16,7 @@ def add_areas(system, cortical_areas):
             if layer != '1' and layer != '6':
                 name = _pop_name(area, layer)
 
-                n = data.get_num_neurons(area, layer)
+                n = _get_num_ff_neurons(area, layer)
                 e = data.get_extrinsic_inputs(area, layer) if layer == '4' else None
                 w = data.get_receptive_field_size(area) if layer == '2/3' else None
 
@@ -134,7 +132,7 @@ def make_big_system():
     system.connect_areas(system.input_name, 'konio_LGN', 1.)
 
     for layer in ['4Calpha', '4Cbeta', '4B', '2/3', '5']:
-        n = data.get_num_neurons('V1', layer)
+        n = _get_num_ff_neurons('V1', layer)
         e = data.get_extrinsic_inputs('V1', '4') if layer[0] == '4' else None
         if layer == '2/3':
             w = data.get_receptive_field_size('V1')
@@ -158,7 +156,7 @@ def make_big_system():
         for layer in ['2/3', '4', '5']:
             name = _pop_name(area, layer)
 
-            n = data.get_num_neurons('V2', layer) / 2  # dividing V2 equally into thick and thin+inter stripes
+            n = _get_num_ff_neurons('V2', layer) / 2  # dividing V2 equally into thick and thin+inter stripes
             e = data.get_extrinsic_inputs('V2', '4') if layer == '4' else None
             w = data.get_receptive_field_size('V2') if layer == '2/3' else None
 
@@ -208,6 +206,17 @@ def _pop_name(area, layer):
     return '{}_{}'.format(area, layer)
 
 
+def _get_num_ff_neurons(area, layer):
+    n = data.get_num_neurons(area, layer)
+
+    # layer 5 has many neurons that project down, to other hemisphere, and out
+    # fo the cortex; not sure about the fraction
+    if layer == '5':
+        return n/2
+    else:
+        return n
+
+
 def _add_intrinsic_forward_connections(system, area):
     if area == 'V1':
         system.connect_layers('V1_4Cbeta', 'V1_2/3', data.get_inputs_per_neuron(area, '4', '2/3'))
@@ -230,7 +239,7 @@ def make_small_system(miniaturize=False):
     for layer in ['2/3', '4Cbeta', '5']:
         name = _pop_name(area, layer)
 
-        n = data.get_num_neurons(area, layer)
+        n = _get_num_ff_neurons(area, layer)
         e = data.get_extrinsic_inputs(area, '4') if layer == '4Cbeta' else None
         w = data.get_receptive_field_size(area) if layer == '2/3' else None
 
@@ -267,33 +276,21 @@ def make_small_system(miniaturize=False):
 if __name__ == '__main__':
     # system = make_small_system(miniaturize=True)
     system = make_big_system()
-    # system.print_description()
+    system.print_description()
     # net, training_curve = calc.optimization.test_stride_patterns(system, n=1)
 
-    import pickle
-    import numpy as np
-    import matplotlib.pyplot as plt
-    with open('stride-pattern-best-of-500.pkl', 'rb') as file:
-        data = pickle.load(file)
-
-    # system = data['system']
-    net, training_curve = test_stride_pattern(system, data['strides'])
-    with open('optimization-result.pkl', 'wb') as file:
-        pickle.dump({'net': net, 'training_curve': training_curve}, file)
-
-    print('**********************')
-    print(net)
-    print(training_curve)
-
-    # with open('optimization-result-best-of-500.pkl', 'rb') as file:
+    # import pickle
+    # import numpy as np
+    # import matplotlib.pyplot as plt
+    # with open('stride-pattern-best-of-500.pkl', 'rb') as file:
     #     data = pickle.load(file)
-    # net = data['net']
     #
-    # w = [int(np.round(conn.w)) for conn in net.connections]
-    # b = np.linspace(.5, max(w)+.5, max(w)+1)
-    # plt.figure(figsize=(4.5,1.5))
-    # plt.hist(w, bins=b)
-    # plt.xlabel('Kernel width')
-    # plt.ylabel('Count')
-    # plt.tight_layout()
-    # plt.show()
+    # # system = data['system']
+    # net, training_curve = test_stride_pattern(system, data['strides'])
+    # with open('optimization-result.pkl', 'wb') as file:
+    #     pickle.dump({'net': net, 'training_curve': training_curve}, file)
+    #
+    # print('**********************')
+    # print(net)
+    # print(training_curve)
+
