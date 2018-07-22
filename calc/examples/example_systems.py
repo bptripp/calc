@@ -275,22 +275,22 @@ def make_small_system(miniaturize=False):
 
 if __name__ == '__main__':
     # system = make_small_system(miniaturize=True)
-    system = make_big_system()
-    system.print_description()
+    # system = make_big_system()
+    # system.print_description()
     # net, training_curve = calc.optimization.test_stride_patterns(system, n=1)
 
-    # import pickle
+    import pickle
     # import numpy as np
     # import matplotlib.pyplot as plt
-    # with open('stride-pattern-best-of-500.pkl', 'rb') as file:
-    #     data = pickle.load(file)
-    #
-    # # system = data['system']
-    # net, training_curve = test_stride_pattern(system, data['strides'])
-    # with open('optimization-result.pkl', 'wb') as file:
-    #     pickle.dump({'net': net, 'training_curve': training_curve}, file)
-    #
-    # print('**********************')
-    # print(net)
-    # print(training_curve)
+    with open('stride-pattern-best-of-1000.pkl', 'rb') as file:
+        data = pickle.load(file)
+
+    # system = data['system']
+    net, training_curve = test_stride_pattern(data['system'], data['strides'])
+    with open('optimization-result.pkl', 'wb') as file:
+        pickle.dump({'net': net, 'training_curve': training_curve}, file)
+
+    print('**********************')
+    print(net)
+    print(training_curve)
 

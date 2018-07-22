@@ -47,6 +47,7 @@ def get_stride_pattern(system, max_cumulative_stride=512, best_of=10):
 
     return best_pattern, distances
 
+
 class StridePattern:
 
     def __init__(self, system, max_cumulative_stride):
@@ -75,7 +76,7 @@ class StridePattern:
         self.set_hints()
 
 
-    def set_hints(self, image_layer=0, image_channels=3, V1_channels=120, other_channels={'LGNparvo': 4, 'LGNmagno': 2, 'LGNkonio': 1}):
+    def set_hints(self, image_layer=0, image_channels=3, V1_channels=130, other_channels={'LGNparvo': 4, 'LGNmagno': 2, 'LGNkonio': 1}):
         # inferred from spine counts
 
         image_pixels = np.sqrt(system.populations[image_layer].n / image_channels)
@@ -366,10 +367,7 @@ if __name__ == '__main__':
     # path = longest_path(system, 'V4_5')
     # print(path)
 
-    candidate, distances = get_stride_pattern(system, best_of=500)
-    # candidate = StridePattern(system, 32)
-    # candidate.set_hints()
-    # candidate.fill()
+    candidate, distances = get_stride_pattern(system, best_of=1000)
 
     with open('stride-pattern.pkl', 'wb') as file:
         pickle.dump({'system': system, 'strides': candidate, 'distances': distances}, file)
