@@ -55,6 +55,7 @@ class NetworkVariables:
         :param image_layer: index of the image layer (the input)
         :param image_pixel_width: width of an image pixel in degrees visual angle
         """
+        # self.network = network
 
         self.image_layer = image_layer
         self.image_pixel_width = image_pixel_width
@@ -84,6 +85,8 @@ class NetworkVariables:
         self.output_connections = [] # for each layer, a list of indices of connections that carry output
         self.pres = [] # for each connection, index of presynaptic layer
         self.posts = [] # for each connection, index of postsynaptic layer
+        self.inter_area = [] # for each connection, True for InterAreaProjections
+        self.cortical_layer = [] # for each layer, cortical layer name or None
 
         for layer in network.layers:
             self.m.append(tf.constant(layer.m, dtype=tf.float32))
@@ -102,6 +105,15 @@ class NetworkVariables:
             self.input_layers.append(input_layers)
             self.input_connections.append(input_connections)
             self.output_connections.append(output_connections)
+
+            cortical_layer = None
+            if '2/3' in layer.name:
+                cortical_layer = '2/3'
+            elif '4' in layer.name:
+                cortical_layer = '4'
+            elif '5' in layer.name:
+                cortical_layer = '5'
+            self.cortical_layer.append(cortical_layer)
 
         def get_min_downstream_w_rf(w_rf, width):
             sigma = w_rf / image_pixel_width * width / network.layers[image_layer].width
@@ -152,6 +164,10 @@ class NetworkVariables:
 
             self.pres.append(pre_ind)
             self.posts.append(post_ind)
+
+        for projection in system.projections:
+            self.inter_area.append(isinstance(projection, InterAreaProjection))
+
 
     def collect_variables(self):
         vars = []
@@ -358,11 +374,25 @@ class Cost:
         """
         terms = []
         for i in range(self.network.n_layers):
-            fractions = []
+            interlaminar_fractions = []
+            interarea_fractions = []
             if self.network.output_connections[i]: # this cost only applies if layer has outputs
                 for conn_ind in self.network.output_connections[i]:
-                    fractions.append(self.network.c[conn_ind])
-                terms.append(norm_squared_error(1.0, tf.reduce_sum(fractions)))
+                    if self.network.inter_area[conn_ind]:
+                        interarea_fractions.append(self.network.c[conn_ind])
+                    else:
+                        interlaminar_fractions.append(self.network.c[conn_ind])
+
+                # most neurons in L2/3 should project out of area AND to L5
+                print(self.network.cortical_layer[i])
+                if self.network.cortical_layer[i] == '2/3':
+                    terms.append(norm_squared_error(1.0, tf.reduce_sum(interarea_fractions)))
+                    terms.append(norm_squared_error(1.0, tf.reduce_sum(interlaminar_fractions)))
+                elif self.network.cortical_layer[i] == '4':
+                    terms.append(norm_squared_error(1.0, tf.reduce_sum(interlaminar_fractions)))
+                else: # most L5 and subcortical neurons should project out of area
+                    terms.append(norm_squared_error(1.0, tf.reduce_sum(interarea_fractions)))
+
         return tf.constant(kappa) * tf.reduce_mean(terms)
 
     def constraint_cost(self, kappa):
