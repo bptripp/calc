@@ -1149,6 +1149,7 @@ class E07:
         plt.xlabel('Distance from V1')
         plt.ylabel('Basal spine count')
         plt.tight_layout()
+        plt.savefig('analysis/figures/spine-count.eps')
         plt.show()
 
 
@@ -1286,12 +1287,15 @@ RF_diameter_5_degrees_eccentricity = {
     'V3': 2.8, # mean of Gattass et al. (1988) and Felleman & Van Essen (1987)
     'V4': 4.8, # mean of Gattass et al. (1988) and Boussaoud et al. (1991)
     'MT': 4.2, # mean of Komatsu et al. (1988) and Maunsell et al. (1987)
-    'V6': 7.7, # Galletti et al. (1999)
+    'PO': 7.7, # Galletti et al. (1999)
     'MSTd': 16.0, # Komatsu et al. (1988)
     'AIP': None, # but see Romero & Janssen (2016)
-    'TEO': 8.9, # Boussaoud et al. (1991)
-    'TEpd': 38.5 # for TE generally in 0-10deg range, from Boussaoud et al. (1991), but sites look fairly dorsal (Fig 4)
+    'PITd': 8.9, # Boussaoud et al. (1991)
+    'PITv': 8.9, # Boussaoud et al. (1991)
+    'CITd': 38.5, # for TE generally in 0-10deg range, from Boussaoud et al. (1991), but sites look fairly caudal (Fig 4)
+    'CITv': 38.5
 }
+
 
 def get_RF_size(area):
     result = None
@@ -1638,6 +1642,7 @@ def _total_thickness(thickness):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     data = Data()
+    # print(data.synapses_per_connection)
 
     # n1 = []
     # n2 = []
@@ -1657,18 +1662,18 @@ if __name__ == '__main__':
     # plt.scatter(n1, n2)
     # plt.show()
 
-    sum1 = []
-    sum2 = []
-    for area in data.get_areas():
-        sum1.append(S18_density[area][1] * S18_surface_area[area])
-        s2 = 0
-        for layer in data.get_layers(area):
-            s2 += data.get_num_neurons(area, layer)
-        sum2.append(s2)
-
-    print(np.corrcoef(sum1, sum2))
-    plt.scatter(sum1, sum2)
-    plt.show()
+    # sum1 = []
+    # sum2 = []
+    # for area in data.get_areas():
+    #     sum1.append(S18_density[area][1] * S18_surface_area[area])
+    #     s2 = 0
+    #     for layer in data.get_layers(area):
+    #         s2 += data.get_num_neurons(area, layer)
+    #     sum2.append(s2)
+    #
+    # print(np.corrcoef(sum1, sum2))
+    # plt.scatter(sum1, sum2)
+    # plt.show()
 
 
     # #TODO: move to unit test
@@ -1814,7 +1819,8 @@ if __name__ == '__main__':
 
     # synapses_per_neuron('MT', '4', '2/3')
 
-    # e07.plot()
+    e07 = E07()
+    e07.plot()
 
     # get_centre(self, area):
 
