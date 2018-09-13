@@ -107,12 +107,11 @@ class NetworkVariables:
             self.output_connections.append(output_connections)
 
             cortical_layer = None
-            if '2/3' in layer.name:
-                cortical_layer = '2/3'
-            elif '4' in layer.name:
-                cortical_layer = '4'
-            elif '5' in layer.name:
-                cortical_layer = '5'
+            if '_' in layer.name:
+                cortical_layer = layer.name.split('_')[1]
+                if cortical_layer not in ['2/3', '4', '4B', '4Calpha', '4Cbeta', '5']:
+                    cortical_layer = None
+
             self.cortical_layer.append(cortical_layer)
 
         def get_min_downstream_w_rf(w_rf, width):
@@ -177,7 +176,7 @@ class NetworkVariables:
         return vars
 
 
-def get_clip_ops(vars, min=1e-3, max=1.):
+def get_clip_ops(vars, min=1e-4, max=1.):
     # ops for clipping all variables to > 0 and <= 1
 
     result = []
@@ -344,11 +343,10 @@ class Cost:
         sigma_ij = self.network.sigma[conn_ind]
         w_ij = self.network.w[conn_ind]
         s_ij = self.network.s[conn_ind]
-        c_ij = self.network.c[conn_ind]
         m_i = self.network.m[post_ind]
 
         beta_ij = tf.maximum(tf.constant(1.), tf.square(w_ij / s_ij))
-        exponent = beta_ij * c_ij * m_i
+        exponent = beta_ij * m_i
         return tf.constant(1.) - tf.pow(tf.constant(1.)-sigma_ij, exponent)
 
     def param_cost(self, kappa):
@@ -383,40 +381,70 @@ class Cost:
                     else:
                         interlaminar_fractions.append(self.network.c[conn_ind])
 
-                # most neurons in L2/3 should project out of area AND to L5
-                print(self.network.cortical_layer[i])
                 if self.network.cortical_layer[i] == '2/3':
-                    terms.append(norm_squared_error(1.0, tf.reduce_sum(interarea_fractions)))
-                    terms.append(norm_squared_error(1.0, tf.reduce_sum(interlaminar_fractions)))
-                elif self.network.cortical_layer[i] == '4':
-                    terms.append(norm_squared_error(1.0, tf.reduce_sum(interlaminar_fractions)))
-                else: # most L5 and subcortical neurons should project out of area
-                    terms.append(norm_squared_error(1.0, tf.reduce_sum(interarea_fractions)))
+                    # most neurons in L2/3 should project out of area AND to L5
+                    if interarea_fractions:
+                        terms.append(tf.square(tf.reduce_sum(interarea_fractions)-1.0))
+                    terms.append(tf.square(tf.reduce_sum(interlaminar_fractions)-1.0))
+                elif self.network.cortical_layer[i] in ['4', '4Calpha', '4Cbeta']:
+                    terms.append(tf.square(tf.reduce_sum(interlaminar_fractions)-1.0))
+                else:
+                    # most L5 and subcortical neurons should project out of area
+                    if interarea_fractions:
+                        terms.append(tf.square(tf.reduce_sum(interarea_fractions)-1.0))
 
         return tf.constant(kappa) * tf.reduce_mean(terms)
 
-    def constraint_cost(self, kappa):
+    def dead_end_cost_debug(self, kappa):
         """
         :param kappa: weight relative to other costs
-        :return: Cost for soft constraints on parameters
+        :return: cost due to under-use or over-use of feature maps in outgoing connections;
+            the premise is that most pyramidal neurons are projection neurons that have a
+            single cortico-cortical connection; we take this to mean that the sum of c over
+            outgoing connections should be about 1
         """
-        # We don't need >1 bounds on m and w because these are set separately
-        return bounds(self.network.width, min=1.) \
-            + bounds(self.network.s, min=0.1) \
-            + bounds(self.network.c, min=1e-2, max=1.) \
-            + bounds(self.network.sigma, min=1e-3, max=1.) \
-            + bounds(self.network.w_rf, min=1e-3)
+        terms = []
+        indices = []
+        n = []
+        for i in range(self.network.n_layers):
+            interlaminar_fractions = []
+            interarea_fractions = []
+            if self.network.output_connections[i]: # this cost only applies if layer has outputs
+                for conn_ind in self.network.output_connections[i]:
+                    if self.network.inter_area[conn_ind]:
+                        interarea_fractions.append(self.network.c[conn_ind])
+                    else:
+                        interlaminar_fractions.append(self.network.c[conn_ind])
 
-    def sparsity_constraint_cost(self, kappa):
+                # most neurons in L2/3 should project out of area AND to L5
+                print(self.network.cortical_layer[i])
+                if self.network.cortical_layer[i] == '2/3':
+                    if interarea_fractions:
+                        terms.append(norm_squared_error(1.0, tf.reduce_sum(interarea_fractions)))
+                        indices.append(i)
+                        n.append(len(interarea_fractions))
+                    terms.append(norm_squared_error(1.0, tf.reduce_sum(interlaminar_fractions)))
+                    indices.append(i)
+                    n.append(len(interlaminar_fractions))
+                elif self.network.cortical_layer[i] in ['4', '4Calpha', '4Cbeta']:
+                    terms.append(norm_squared_error(1.0, tf.reduce_sum(interlaminar_fractions)))
+                    indices.append(i)
+                    n.append(len(interlaminar_fractions))
+                else:
+                    # most L5 and subcortical neurons should project out of area
+                    if interarea_fractions:
+                        terms.append(norm_squared_error(1.0, tf.reduce_sum(interarea_fractions)))
+                        indices.append(i)
+                        n.append(len(interarea_fractions))
+
+        return tf.reduce_mean(terms), indices, n
+
+    def w_k_constraint_cost(self, kappa):
         """
         :param kappa: weight relative to other costs
-        :return: Cost for soft constraints on parameters related to connection sparsity
+        :return: Cost for soft constraint w_k >= 1
         """
-        return bounds(self.network.c, min=1e-2, max=1.) \
-            + bounds(self.network.sigma, min=1e-3, max=1.)
-
-    def kernel_constraint_cost(self, kappa):
-        return bounds(self.network.c, min=1.)
+        return kappa * bounds(self.network.w, min=1.)
 
     def compare_system(self, system, sess):
         """
