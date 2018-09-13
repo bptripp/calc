@@ -10,19 +10,26 @@ from calc.network import Network
 from calc.examples.example_systems import make_big_system
 from calc.analysis.custom_layers import Scale
 from calc.analysis.densenet121 import DenseNet
+from calc.data import FV91_hierarchy
 
 """
 For visualizing architectures of cortical models and standard convnets.   
 """
 
-
-def plot_FLNe(system, figsize=(8,6)):
+def plot_FLNe(system, figsize=(8,6), network=None):
     layers = []
     for pop in system.populations:
-        layers.append(pop.name.split('-')[0])
+        layer = pop.name.split('-')[0]
+        if layer == 'Conv2D':
+            layer = ''
+        if '_2/3' in layer or '_5' in layer:
+            layer = ''
+        layers.append(layer)
 
     FLNe = np.zeros((len(layers), len(layers)))
-    for projection in system.projections:
+    # for projection in system.projections:
+    for index in range(len(system.projections)):
+        projection = system.projections[index]
         i = system.find_population_index(projection.origin.name)
         j = system.find_population_index(projection.termination.name)
         if isinstance(projection, InterAreaProjection):
@@ -31,7 +38,12 @@ def plot_FLNe(system, figsize=(8,6)):
         else:
             # Make proportional to presynaptic population size (this is fairly sensible for current inter-laminar
             # structure, i.e. L4->L2/3, L4->L5, L2/3->L5, but may not be in general.
-            FLNe[i,j] = projection.origin.n
+            if network is None:
+                FLNe[i,j] = projection.origin.n
+            else:
+                print(network.connections[index].c)
+                FLNe[i, j] = projection.origin.n * network.connections[index].c
+
 
     fig, ax = plt.subplots(figsize=figsize)
     im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
@@ -52,14 +64,18 @@ def plot_FLNe(system, figsize=(8,6)):
 
 
 def plot_population_sizes():
-    network_names = ['Macaque', 'VGG-16', 'ResNet50', 'InceptionV3', 'DenseNet121']
+    network_names = ['MSH', 'VGG-16', 'ResNet50', 'InceptionV3', 'DenseNet121']
     symbols = ['ks', 'ro', 'b^', 'cx', 'm.']
     fig, ax = plt.subplots(figsize=(9,6))
     for i in range(len(network_names)):
         network = get_network(network_names[i])
         population_sizes = [layer.m * layer.width**2 for layer in network.layers]
         layer_names = [layer.name.split('-')[0] for layer in network.layers]
-        plt.plot(population_sizes, symbols[i])
+        if network_names[i] == 'MSH':
+            depths = get_depths(layer_names)
+            plt.plot(depths, population_sizes, symbols[i])
+        else:
+            plt.plot(population_sizes, symbols[i])
 
     plt.xlabel('Network layer')
     plt.ylabel('Number of units')
@@ -70,19 +86,52 @@ def plot_population_sizes():
     plt.yscale('log')
     plt.ylim([500, 1000000000])
     plt.legend(network_names, fontsize=15, loc='upper right')
-    plt.savefig('population-sizes.eps')
-    plt.savefig('population-sizes.pdf')
-    plt.show()
+    # plt.title('Population Sizes')
+    plt.savefig('figures/population-sizes.eps')
+    plt.savefig('figures/population-sizes.pdf')
+    # plt.show()
+
+
+def get_depths(layer_names):
+    result = []
+    layer_levels = {'4': 1, '4Calpha': 1, '4Cbeta': 1, '4B': 1, '2/3': 2, '5': 3}
+    for name in layer_names:
+        if '_' in name:
+            area = name.split('_')[0]
+            if area.startswith('V2'):
+                area = 'V2'
+            layer = name.split('_')[1]
+            if area in FV91_hierarchy.keys():
+                cortical_level = FV91_hierarchy[area]
+                layer_level = layer_levels[layer]
+                depth = 1 + 3*(cortical_level-1) + layer_level
+            else:
+                depth = 1
+        else:
+            depth = 0
+
+        result.append(depth)
+        # print('{} depth: {}'.format(name, depth))
+
+    return result
 
 
 def plot_feature_maps():
-    network_names = ['Macaque', 'VGG-16', 'ResNet50', 'InceptionV3', 'DenseNet121']
+    network_names = ['MSH', 'VGG-16', 'ResNet50', 'InceptionV3', 'DenseNet121']
     symbols = ['ks', 'ro', 'b^', 'cx', 'm.']
     fig, ax = plt.subplots(figsize=(9,6))
     for i in range(len(network_names)):
         network = get_network(network_names[i])
         m = [layer.m for layer in network.layers]
-        plt.plot(m, symbols[i])
+        # plt.plot(m, symbols[i])
+
+        if network_names[i] == 'MSH':
+            layer_names = [layer.name.split('-')[0] for layer in network.layers]
+            depths = get_depths(layer_names)
+            plt.plot(depths, m, symbols[i])
+        else:
+            plt.plot(m, symbols[i])
+
 
     #TODO: this should really be a range for macaque
     plt.xlabel('Network layer')
@@ -94,9 +143,9 @@ def plot_feature_maps():
     plt.yscale('log')
     plt.ylim([.5, 15000])
     plt.legend(network_names, fontsize=15, loc='lower right')
-    plt.savefig('feature-maps.eps')
-    plt.savefig('feature-maps.pdf')
-    plt.show()
+    plt.savefig('figures/feature-maps.eps')
+    plt.savefig('figures/feature-maps.pdf')
+    # plt.show()
 
 
 def make_system(cnn):
@@ -223,22 +272,30 @@ def _get_inputs(layer):
 
 
 def plot_kernel_sizes():
-    macaque_net = get_network('Macaque')
+    macaque_net = get_network('MSH')
     max_w = max([int(np.round(conn.w)) for conn in macaque_net.connections])
-    bin_edges = np.linspace(.5, max_w+.5, max_w+1)
+    # bin_edges = np.linspace(.5, max_w+.5, max_w+1)
+    bin_edges = np.linspace(.5, 70.5, 71)
 
-    network_names = ['Macaque', 'VGG-16', 'ResNet50', 'InceptionV3', 'DenseNet121']
+    network_names = ['MSH', 'VGG-16', 'ResNet50', 'InceptionV3', 'DenseNet121']
 
     fig, axes = plt.subplots(nrows=len(network_names), ncols=1, figsize=(5,8))
     for i in range(len(network_names)):
         net = get_network(network_names[i])
-        w = [int(np.round(conn.w)) for conn in net.connections]
+        # w = [int(np.round(conn.w)) for conn in net.connections]
+        w = [np.clip(conn.w, 0, 70) for conn in net.connections]
         axes[i].hist(w, bins=bin_edges)
         axes[i].set_title(network_names[i], fontsize=18)
 
         for item in ([axes[i].xaxis.label, axes[i].yaxis.label] +
                      axes[i].get_xticklabels() + axes[i].get_yticklabels()):
             item.set_fontsize(16)
+
+    xticks = [0, 10, 20, 30, 40, 50, 60, 70]
+    xlabels = ['0', '10', '20', '30', '40', '50', '60', '70+']
+    for axis in axes:
+        axis.set_xticks(xticks)
+        axis.set_xticklabels(xlabels)
 
     axes[2].set_ylabel('Count')
     axes[-1].set_xlabel('Kernel width')
@@ -249,23 +306,29 @@ def plot_kernel_sizes():
 
 
 def plot_stride():
-    macaque_net = get_network('Macaque')
+    macaque_net = get_network('MSH')
     max_s = max([int(np.round(conn.s)) for conn in macaque_net.connections])
     bin_edges = np.linspace(.5, max_s+.5, max_s+1)
 
-    network_names = ['Macaque', 'VGG-16', 'ResNet50', 'InceptionV3', 'DenseNet121']
+    network_names = ['MSH', 'VGG-16', 'ResNet50', 'InceptionV3', 'DenseNet121']
     # network_names = ['Macaque', 'VGG-16']
 
     fig, axes = plt.subplots(nrows=len(network_names), ncols=1, figsize=(5,8))
     for i in range(len(network_names)):
         net = get_network(network_names[i])
         s = [int(np.round(conn.s)) for conn in net.connections]
-        axes[i].hist(s, bins=bin_edges)
+        n, bins, patches = axes[i].hist(s, bins=bin_edges)
         axes[i].set_title(network_names[i], fontsize=18)
+        print(n)
+
+        for j in range(len(n)):
+            if n[j] > 0 and n[j] < .05*np.max(n):
+                axes[i].text((bins[j] + bins[j+1])/2 - .2, np.max(n)/10, '*', fontsize=16)
 
         for item in ([axes[i].xaxis.label, axes[i].yaxis.label] +
                      axes[i].get_xticklabels() + axes[i].get_yticklabels()):
             item.set_fontsize(16)
+
 
     axes[2].set_ylabel('Count')
     axes[-1].set_xlabel('Stride')
@@ -275,8 +338,88 @@ def plot_stride():
     plt.show()
 
 
+def get_skip_lengths(system):
+    """
+    :param system: a system
+    :return: length of skip connection for each projection in the system, i.e. the length
+        of the longest path between the nodes
+    """
+    import networkx as nx
+
+    g = system.make_graph()
+    for u, v, d in g.edges(data=True):
+        d['weight'] = -1
+
+    lengths = {}
+    for pop in system.populations:
+        lengths[pop.name] = nx.bellman_ford(g, pop.name)
+
+    result = []
+    for p in system.projections:
+        result.append(-lengths[p.origin.name][1][p.termination.name])
+
+    # print some additional information ...
+    print('longest skip connection: {}'.format(max(result)))
+    for i in range(len(system.projections)):
+        if result[i] == max(result):
+            print([system.projections[i].origin.name, system.projections[i].termination.name])
+    print('longest path: {}'.format(nx.dag_longest_path_length(g)))
+    print(nx.dag_longest_path(g))
+
+    return result
+
+
+def plot_sparsity():
+    macaque_net = get_network('MSH')
+    sparsity = [conn.c * conn.sigma for conn in macaque_net.connections]
+    # sparsity = [conn.c for conn in macaque_net.connections]
+    kernel_width = [conn.w for conn in macaque_net.connections]
+
+    macaque_system = get_system('Macaque')
+    inter_area = [isinstance(p, InterAreaProjection) for p in macaque_system.projections]
+
+    skip_lengths = get_skip_lengths(macaque_system)
+
+    inter_area_sparsity = []
+    inter_area_kernel_width = []
+    inter_area_skip_lengths = []
+    inter_laminar_sparsity = []
+    inter_laminar_kernel_width = []
+    inter_laminar_skip_lengths = []
+    for i in range(len(inter_area)):
+        if inter_area[i]:
+            inter_area_sparsity.append(sparsity[i])
+            inter_area_kernel_width.append(kernel_width[i])
+            inter_area_skip_lengths.append(skip_lengths[i])
+        else:
+            inter_laminar_sparsity.append(sparsity[i])
+            inter_laminar_kernel_width.append(kernel_width[i])
+            inter_laminar_skip_lengths.append(skip_lengths[i])
+
+
+    plt.figure(figsize=(3.5,2.5))
+    plt.loglog(inter_area_kernel_width, inter_area_sparsity, 'kx')
+    plt.loglog(inter_laminar_kernel_width, inter_laminar_sparsity, 'b.')
+    plt.xlabel('kernel width')
+    plt.ylabel('sparsity')
+    # plt.legend(('inter-area', 'inter-laminar'), loc='upper right')
+    plt.tight_layout()
+    plt.savefig('figures/kernel-vs-sparsity.eps')
+    plt.show()
+
+    plt.figure(figsize=(3.5,2.5))
+    plt.semilogy(inter_area_skip_lengths, inter_area_kernel_width, 'kx')
+    plt.semilogy(inter_laminar_skip_lengths, inter_laminar_kernel_width, 'b.')
+    plt.xlabel('skip length')
+    plt.ylabel('kernel width')
+    plt.legend(('inter-area', 'inter-laminar'), loc='lower right')
+    plt.tight_layout()
+    plt.savefig('figures/skip-length-vs-kernel.eps')
+    plt.show()
+
+
 def get_system(name):
-    if name == 'macaque':
+    if name.lower() == 'macaque':
         system = make_big_system()
 
         name_order = ['INPUT', 'parvo_LGN', 'magno_LGN', 'konio_LGN', 'V1_4Calpha', 'V1_4Cbeta', 'V1_4B', 'V1_2/3', 'V1_5',
@@ -299,13 +442,25 @@ def get_system(name):
 
 
 def get_network(name):
-    if name.lower() == 'macaque': # load saved optimized network
-        with open('../optimization-result-best-of-500-2.pkl', 'rb') as file:
+    if name.lower() == 'macaque' or name == 'MSH': # load saved optimized network
+        with open('../optimization-result-fixed-f.pkl', 'rb') as file:
             data = pickle.load(file)
         return data['net']
     else:
         cnn = load_cnn(name)
         return make_network(cnn)
+
+
+def count_parameters(net):
+    sparse_result = 0
+    dense_result = 0
+    for c in net.connections:
+        full_size = c.pre.m * c.post.m * c.w**2
+        sparsity_fraction = c.sigma * c.c
+        sparse_result += full_size * sparsity_fraction
+        dense_result += full_size * c.c
+
+    print('# parameters (ignoring pooling etc.): {} (sparse) {} (dense)'.format(sparse_result, dense_result))
 
 
 def load_cnn(name):
@@ -329,15 +484,18 @@ if __name__ == '__main__':
     # figsize=(7,7)
     # system = get_system('VGG-16')
     # figsize=(4,4)
-    system = get_system('DenseNet121')
-    figsize=(10,10)
+    # system = get_system('DenseNet121')
+    # figsize=(9,9)
     # system = get_system('macaque')
+    # network = get_network('macaque')
     # figsize=(10,10)
-    plot_FLNe(system, figsize=figsize)
+    # plot_FLNe(system, figsize=figsize, network=network)
+    # print(len(system.populations))
 
     # plot_population_sizes()
     # plot_feature_maps()
 
+    # network = get_network('VGG-16')
     # network = get_network('InceptionV3')
     # network = get_network('macaque')
     # network.print()
@@ -346,5 +504,8 @@ if __name__ == '__main__':
     # plot_kernel_sizes()
     # plot_stride()
 
+    macaque_system = get_system('Macaque')
+    print(get_skip_lengths(macaque_system))
+    # plot_sparsity()
 
-
+    # count_parameters(get_network('Macaque'))
