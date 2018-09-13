@@ -146,7 +146,12 @@ def make_big_system():
     system.connect_areas('magno_LGN', 'V1_4Calpha', 1.)
     system.connect_areas('konio_LGN', 'V1_2/3', 1.) #TODO: also 4A, but not sure about output of 4A
     system.connect_layers('V1_4Calpha', 'V1_4B', data.get_inputs_per_neuron('V1', '4', '2/3'))
-    system.connect_layers('V1_4Cbeta', 'V1_2/3', data.get_inputs_per_neuron('V1', '4', '2/3'))
+    system.connect_layers('V1_4Cbeta', 'V1_2/3', .5*data.get_inputs_per_neuron('V1', '4', '2/3'))
+
+    # feedforward magno input to ventral areas (see Merigan & Maunsell, 1983, pg 386)
+    system.connect_layers('V1_4Calpha', 'V1_2/3', .5*data.get_inputs_per_neuron('V1', '4', '2/3'))
+    # system.connect_layers('V1_4B', 'V1_2/3', .25*data.get_inputs_per_neuron('V1', '4', '2/3'))
+
     system.connect_layers('V1_2/3', 'V1_5', data.get_inputs_per_neuron('V1', '2/3', '5'))
     system.connect_layers('V1_4Cbeta', 'V1_5', data.get_inputs_per_neuron('V1', '4', '5'))
 
@@ -282,11 +287,12 @@ if __name__ == '__main__':
     import pickle
     # import numpy as np
     # import matplotlib.pyplot as plt
-    with open('stride-pattern-best-of-1000.pkl', 'rb') as file:
+    with open('stride-pattern-best-of-1000-f-corrected.pkl', 'rb') as file:
         data = pickle.load(file)
 
-    # system = data['system']
     net, training_curve = test_stride_pattern(data['system'], data['strides'])
+    # net, training_curve = test_stride_pattern(data['system'], data['first_few'][3], False)
+
     with open('optimization-result.pkl', 'wb') as file:
         pickle.dump({'net': net, 'training_curve': training_curve}, file)
 
