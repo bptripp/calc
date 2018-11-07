@@ -323,7 +323,13 @@ if __name__ == '__main__':
     from calc.examples.example_systems import make_big_system, make_small_system
     import pickle
 
-    system = make_big_system()
+    cortical_areas = ['V1', 'V2', 'V4', 'VOT', 'PITd', 'PITv', 'CITd', 'CITv', 'AITd', 'AITv']
+    system = make_big_system(cortical_areas)
+
+    system.prune_FLNe(0.15)
+    system.normalize_FLNe()
+    # system.print_description()
+    # print(len(system.projections))
 
     # system = calc.system.get_example_small()
     # system = calc.system.get_example_medium()

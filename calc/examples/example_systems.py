@@ -85,7 +85,7 @@ def is_ventral(area):
     return area in ['V4', 'VOT', 'PITd', 'PITv', 'CITd', 'CITv', 'AITd', 'AITv', 'TF', 'TH']
 
 
-def make_big_system():
+def make_big_system(cortical_areas=None):
     # complications:
     # - AIP connections studied by Borra but not in CoCoMac
     # - CIP should maybe be split from LIP (or related to PIP?)
@@ -193,15 +193,17 @@ def make_big_system():
     # DeYoe, E. A., & Van Essen, D. C. (1988). Concurrent processing streams in monkey visual cortex.
     # Trends in neurosciences, 11(5), 219-226.
 
-    cortical_areas = data.get_areas()[:]
-    cortical_areas.remove('MDP') # MDP has no inputs in CoCoMac
+    if cortical_areas is None:
+        cortical_areas = data.get_areas()[:]
+        cortical_areas.remove('MDP') # MDP has no inputs in CoCoMac
+
     # cortical_areas = ['V1', 'V2', 'VP', 'V3', 'V3A', 'MT', 'V4t', 'V4', 'MSTd', 'DP',
     #               'VIP', 'PITv', 'PITd', 'MSTl', 'CITv', 'CITd', 'AITv', 'FST', '7a', 'AITd']
 
     add_areas(system, [a for a in cortical_areas if a not in ('V1', 'V2')])
     connect_areas_in_streams(system, cortical_areas)
 
-    system.prune_FLNe()
+    system.normalize_FLNe()
     system.check_connected()
 
     return system
@@ -258,7 +260,7 @@ def make_small_system(miniaturize=False):
     add_areas(system, [area for area in cortical_areas if area != 'V1'])
     connect_areas(system, cortical_areas)
 
-    system.prune_FLNe()
+    system.normalize_FLNe()
     system.check_connected()
 
     # graph = system.make_graph()
@@ -273,7 +275,7 @@ def make_small_system(miniaturize=False):
             if population.name != system.input_name:
                 population.n = population.n / 20
 
-    system.prune_FLNe()
+    system.normalize_FLNe()
     system.check_connected()
     return system
 
@@ -287,7 +289,7 @@ if __name__ == '__main__':
     import pickle
     # import numpy as np
     # import matplotlib.pyplot as plt
-    with open('stride-pattern-best-of-1000-f-corrected.pkl', 'rb') as file:
+    with open('stride-pattern-ventral.pkl', 'rb') as file:
         data = pickle.load(file)
 
     net, training_curve = test_stride_pattern(data['system'], data['strides'])

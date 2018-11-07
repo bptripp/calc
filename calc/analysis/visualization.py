@@ -162,7 +162,7 @@ def make_system(cnn):
                 f = _get_size(input) # this is normalized in prune_FLNe
                 system.connect_areas(_get_name(input), name, f)
 
-    system.prune_FLNe()
+    system.normalize_FLNe()
     return system
 
 

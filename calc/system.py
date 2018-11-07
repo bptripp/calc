@@ -166,7 +166,7 @@ class System:
                 result.append(projection.origin)
         return result
 
-    def prune_FLNe(self):
+    def normalize_FLNe(self):
         """
         The fraction of extrinsic labelled neurons per source area is determined from tract-tracing
         data. However, if a System does not contain all connections in the brain, the sum of these
@@ -184,6 +184,20 @@ class System:
                 projection = self.find_projection(pre.name, population.name)
                 if isinstance(projection, InterAreaProjection):
                     projection.f = projection.f / total_FLNe
+
+    def prune_FLNe(self, min_fraction):
+        """
+        Removes projections that have FLNe less than min_fraction.
+        :param min_fraction: Minimum FLNe of projections to keep in the model.
+        """
+
+        def keep(projection):
+            if isinstance(projection, InterAreaProjection) and projection.f < min_fraction:
+                return False
+            else:
+                return True
+
+        self.projections = [p for p in self.projections if keep(p)]
 
     def make_graph(self):
         graph = nx.DiGraph()
