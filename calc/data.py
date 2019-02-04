@@ -14,6 +14,7 @@ class Data:
         self.FLNe = iac.get_interpolated_FLNe_Schmidt()
         self.SLN = iac.get_interpolated_SLN_Schmidt()
         self.connections = iac.get_connectivity_grid()
+        self.sd = SchmidtData()
 
         histogram = np.array(FS09_synapses_per_connection)
         self.synapses_per_connection = np.dot(histogram[:,0], histogram[:,1]) / np.sum(histogram[:,1])
@@ -94,7 +95,7 @@ class Data:
         :param target_layer: Another cortical layer; target of same inter-laminar connection
         :return: Number of inputs in this connection per post-synaptic neuron
         """
-        spn = synapses_per_neuron(area, source_layer, target_layer)
+        spn = sd.interlaminar_synapses_per_neuron(area, source_layer, target_layer)
         return spn / self.synapses_per_connection
 
     def get_extrinsic_inputs(self, area, target_layer):
@@ -104,11 +105,10 @@ class Data:
         :return: Estimated number of feedforward inputs per neuron from outside this area
         """
         if area == 'V1':
-            spn = synapses_per_neuron(area, 'thalamocortical', target_layer)
+            return 8 # estimate from Garcia-Marin et al. (2017)
         else:
-            spn = synapses_per_neuron(area, 'extrinsic', target_layer)
-
-        return spn / self.synapses_per_connection
+            spn = sd.interarea_synapses_per_neuron(area, target_layer)
+            return spn / self.synapses_per_connection
 
     def get_source_areas(self, target_area, feedforward_only=False):
         c = self.connections[areas_FV91.index(target_area)]
@@ -461,44 +461,6 @@ def sigmoid(x, centre, gain):
 Data from M. Schmidt, R. Bakker, C. C. Hilgetag, M. Diesmann, and S. J. van Albada, “Multi-scale account of the network structure of 
 macaque visual cortex,” Brain Struct. Funct., vol. 223, no. 3, pp. 1409–1435, 2018.
 """
-
-#TODO: I'm using intrinsic as total of inter-laminar connections comparable to Binzegger
-# (intrinsic, extrinsic) for (2/3E, 2/3I, 4E, 4I, 5E, 5I, 6E, 6I)
-S18_in_degree = {
-    'V1': [3550.00,1246.00,2885.00,1246.00,1975.00,1246.00,2860.00,1246.00,4100.00,1246.00,1632.00,1246.00,2008.00,1246.00,1644.00,1246.00],
-    'V2': [3608.00,1848.00,3853.00,1848.00,3413.00,1848.00,4819.00,1848.00,5669.00,1848.00,3124.00,1848.00,4596.00,1848.00,3511.00,1848.00],
-    'VP': [4345.00,1756.00,4345.00,1756.00,3455.00,1756.00,4233.00,1756.00,6012.00,1756.00,2598.00,1756.00,3383.00,1756.00,2605.00,1756.00],
-    'V3': [4227.00,1810.00,4270.00,1810.00,3833.00,1810.00,4664.00,1810.00,6341.00,1810.00,2576.00,1810.00,3618.00,1810.00,2558.00,1810.00],
-    'V3A': [6086.00,2703.00,6347.00,2703.00,7114.00,2703.00,8001.00,2703.00,7881.00,2703.00,3714.00,2703.00,4786.00,2703.00,3587.00,2703.00],
-    'MT': [5530.00,2510.00,5685.00,2510.00,6383.00,2510.00,6841.00,2510.00,7557.00,2510.00,3372.00,2510.00,4537.00,2510.00,3326.00,2510.00],
-    'V4t': [5700.00,2293.00,6234.00,2293.00,5856.00,2293.00,6867.00,2293.00,7815.00,2293.00,3843.00,2293.00,4952.00,2293.00,3795.00,2293.00],
-    'V4': [4749.00,2337.00,5074.00,2337.00,5481.00,2337.00,5861.00,2337.00,7051.00,2337.00,3272.00,2337.00,4769.00,2337.00,3453.00,2337.00],
-    'VOT': [5065.00,2409.00,5346.00,2409.00,7426.00,2409.00,9952.00,2409.00,5375.00,2409.00,2786.00,2409.00,3713.00,2409.00,2462.00,2409.00],
-    'MSTd': [7356.00,3181.00,7219.00,3181.00,8903.00,3181.00,9986.00,3181.00,8606.00,3181.00,3938.00,3181.00,4714.00,3181.00,3764.00,3181.00],
-    'PIP': [6913.00,3327.00,7216.00,3327.00,8900.00,3327.00,10165.00,3327.00,8286.00,3327.00,4069.00,3327.00,4971.00,3327.00,3859.00,3327.00],
-    'PO': [7482.00,3226.00,7432.00,3226.00,8083.00,3226.00,8943.00,3226.00,9001.00,3226.00,4167.00,3226.00,4879.00,3226.00,4033.00,3226.00],
-    'DP': [7751.00,3328.00,7793.00,3328.00,9097.00,3328.00,9133.00,3328.00,9596.00,3328.00,4477.00,3328.00,5249.00,3328.00,4385.00,3328.00],
-    'MIP': [8244.00,3474.00,7919.00,3474.00,8191.00,3474.00,8911.00,3474.00,10903.00,3474.00,4303.00,3474.00,4547.00,3474.00,4105.00,3474.00],
-    'MDP': [6349.00,5186.00,6702.00,5186.00,3587.00,5186.00,7457.00,5186.00,6246.00,5186.00,3493.00,5186.00,3271.00,5186.00,3086.00,5186.00],
-    'VIP': [6602.00,3378.00,6777.00,3378.00,7163.00,3378.00,8095.00,3378.00,9069.00,3378.00,3939.00,3378.00,5653.00,3378.00,4078.00,3378.00],
-    'LIP': [7331.00,3311.00,7438.00,3311.00,8690.00,3311.00,8926.00,3311.00,9781.00,3311.00,4362.00,3311.00,4623.00,3311.00,3910.00,3311.00],
-    'PITv': [6108.00,2441.00,5906.00,2441.00,5602.00,2441.00,7010.00,2441.00,7243.00,2441.00,3231.00,2441.00,3892.00,2441.00,3136.00,2441.00],
-    'PITd': [5820.00,2471.00,5721.00,2471.00,6000.00,2471.00,7663.00,2471.00,6760.00,2471.00,3105.00,2471.00,3818.00,2471.00,2957.00,2471.00],
-    'MSTl': [7491.00,3094.00,7482.00,3094.00,8566.00,3094.00,9595.00,3094.00,8935.00,3094.00,4122.00,3094.00,5013.00,3094.00,3917.00,3094.00],
-    'CITv': [8696.00,3844.00,8567.00,3844.00,12863.00,3844.00,13354.00,3844.00,9926.00,3844.00,4627.00,3844.00,5434.00,3844.00,4387.00,3844.00],
-    'CITd': [7641.00,3708.00,8066.00,3708.00,17442.00,3708.00,20485.00,3708.00,8023.00,3708.00,4204.00,3708.00,5357.00,3708.00,3714.00,3708.00],
-    'FEF': [7499.00,3597.00,7936.00,3597.00,9253.00,3597.00,9708.00,3597.00,8286.00,3597.00,4003.00,3597.00,4634.00,3597.00,3802.00,3597.00],
-    'TF': [7497.00,3805.00,7692.00,3805.00,8692.00,3805.00,10184.00,3805.00,8790.00,3805.00,4268.00,3805.00,5135.00,3805.00,4027.00,3805.00],
-    'AITv': [8947.00,3786.00,8716.00,3786.00,12235.00,3786.00,12248.00,3786.00,10346.00,3786.00,4735.00,3786.00,5498.00,3786.00,4539.00,3786.00],
-    'FST': [9905.00,4614.00,10189.00,4614.00,14721.00,4614.00,15183.00,4614.00,11516.00,4614.00,5671.00,4614.00,6641.00,4614.00,5428.00,4614.00],
-    '7a': [9280.00,4361.00,9450.00,4361.00,14158.00,4361.00,12136.00,4361.00,11391.00,4361.00,5446.00,4361.00,6207.00,4361.00,5206.00,4361.00],
-    'STPp': [8147.00,4246.00,8771.00,4246.00,14959.00,4246.00,15201.00,4246.00,9707.00,4246.00,5026.00,4246.00,5931.00,4246.00,4669.00,4246.00],
-    'STPa': [8283.00,4032.00,8546.00,4032.00,17072.00,4032.00,18775.00,4032.00,9054.00,4032.00,4548.00,4032.00,5531.00,4032.00,4151.00,4032.00],
-    '46': [8562.00,4309.00,9443.00,4309.00,12826.00,4309.00,11556.00,4309.00,10709.00,4309.00,5580.00,4309.00,6265.00,4309.00,5267.00,4309.00],
-    'AITd': [9256.00,3784.00,8883.00,3784.00,11106.00,3784.00,10468.00,3784.00,10878.00,3784.00,4865.00,3784.00,5540.00,3784.00,4731.00,3784.00],
-    # Schmidt et al. give zeroes for layer 4 of TH, so we copy values from layer 5, which tends to be the most similar
-    'TH': [9229.00,5491.00,9829.00,5491.00,9468.00,5491.00,4774.00,5491.00,9468.00,5491.00,4774.00,5491.00,6566.00,5491.00,5629.00,5491.00]
-}
 
 # 1, 2/3, 4, 5, 6, total
 S18_thickness = {
@@ -1154,115 +1116,18 @@ class E07:
         plt.show()
 
 
-def synapses_per_neuron(area, source_layer, target_layer):
+class SchmidtData:
     """
-    Mean inbound connections per neuron. Only excitatory cells are considered, based on the
+    Data on mean inbound synapses per neuron. Only excitatory cells are considered, based on the
     rationale in:
 
     Parisien, C., Anderson, C. H., & Eliasmith, C. (2008). Solving the problem of negative
     synaptic weights in cortical models. Neural computation, 20(6), 1473-1494.
+
     Tripp, B., & Eliasmith, C. (2016). Function approximation in inhibitory networks.
     Neural Networks, 77, 95-106.
-
-    Inputs to excitatory cells are averaged over excitatory cell types, weighted by numbers
-    of each cell type.
-
-    The numbers are based on potential (geometric) connections in cat V1, from:
-
-    T. Binzegger, R. J. Douglas, and K. A. C. Martin, “A quantitative map of the circuit of cat
-    primary visual cortex,” J. Neurosci., vol. 24, no. 39, pp. 8441–8453, 2004.
-
-    Regarding similarity of inter-laminar structure between cat and macaque V1, see:
-
-    E. M. Callaway, “Local Circuits in Primary Visual Cortex of the Macaque Monkey,”
-    Annu. Rev. Neurosci., vol. 21, no. 1, pp. 47–74, 1998.
-
-    Regarding support for random contact (but not functional connectivity) based on geometry see:
-
-    N. Kalisman, G. Silberberg, and H. Markram, “The neocortical microcircuit as a tabula
-    rasa,” Proc. Natl. Acad. Sci., vol. 102, no. 3, pp. 880–885, 2005.
-
-    :param area: cortical area (e.g. 'V1', 'V2')
-    :param source_layer: one of '1', '2/3', '4', '5', '6' or 'extrinsic'
-    :param target_layer: one of '1', '2/3', '4', '5', '6'
-    :return:
     """
-    n_source_types = 16
-    n_target_types = 19
 
-    # find table of synapses between types summed across all layers
-    totals_across_layers = np.zeros((n_target_types, n_source_types))
-    layers = ['1', '2/3', '4', '5', '6']
-    for layer in layers:
-        totals_across_layers = totals_across_layers + _get_synapses_per_layer_cat_V1(layer)
-
-    # sum over sources and weighted average over targets ...
-    source_types = BDM04_excitatory_types[source_layer] # cell types in source layer (regardless of where synapses are)
-    interlaminar_source_types = BDM04_excitatory_types['interlaminar']
-    target_types = BDM04_excitatory_types[target_layer]
-
-    total_inputs_from_source = np.zeros(n_target_types)
-    total_inputs = np.zeros(n_target_types)
-    for i in range(n_source_types):
-        if BDM04_sources[i] in source_types:
-            total_inputs_from_source = total_inputs_from_source + totals_across_layers[:,i]
-        if BDM04_sources[i] in interlaminar_source_types:
-            total_inputs = total_inputs + totals_across_layers[:,i]
-
-    weighted_sum_from_source = 0.
-    weighted_sum = 0.
-    total_weight = 0.
-    for i in range(n_target_types):
-        if BDM04_targets[i] in target_types:
-            n = BDM04_N_per_type[BDM04_targets[i]]
-            weighted_sum_from_source += n * total_inputs_from_source[i]
-            weighted_sum += n * total_inputs[i]
-            total_weight += n
-
-    in_degree_from_source = weighted_sum_from_source / total_weight
-    in_degree = weighted_sum / total_weight
-
-    sd = SchmidtData()
-    v1_synapses = sd.synapses_per_neuron_interlaminar_total('V1', target_layer)
-    area_synapses = sd.synapses_per_neuron_interlaminar_total(area, target_layer)
-    monkey_cat_ratio = v1_synapses / in_degree
-
-    # For areas other than V1, scale by in-degree of target layer estimated by Schmidt et al.
-    area_ratio = area_synapses / v1_synapses
-
-    return area_ratio * monkey_cat_ratio * in_degree_from_source
-
-
-def _get_synapses_per_layer_cat_V1(layer):
-    with open(data_folder() + '/BDM04-Supplementary.txt') as file:
-        found_layer = False
-        table = []
-        while True:
-            line = file.readline()
-
-            if not line:
-                break
-            if found_layer and len(line.strip()) == 0:
-                break
-
-            if not line.startswith('#'): # comment
-                if found_layer:
-                    n_cols = 16
-                    items = line.split()
-                    row = np.zeros(n_cols)
-                    assert len(items) == n_cols+1 or len(items) == 1 # expected # columns or empty
-                    for i in range(1, len(items)):  # skip row header
-                        row[i-1] = float(items[i].replace('-', '0'))
-                    table.append(row)
-
-                if line.startswith('L{}'.format(layer)):
-                    found_layer = True
-
-        assert len(table) == 19 # expected # of rows
-        return np.array(table)
-
-
-class SchmidtData:
     def __init__(self):
         with open('./data_files/schmidt/default_Data_Model_.json') as file:
             self.data = json.load(file)
@@ -1549,35 +1414,6 @@ class CoCoMac:
             return None
 
 
-    @staticmethod
-    def _print_fraction_asymmetric(layer):
-        as_col_num = 14
-        asymmetric_synapses_per_neuron = _get_synapses_per_layer_cat_V1(layer)[:,as_col_num]
-
-        neurons = []
-        for target in BDM04_targets:
-            neurons.append(BDM04_N_per_type[target])
-
-        asymmetric_synapses_per_type = np.multiply(asymmetric_synapses_per_neuron, neurons)
-
-        layers = []
-        asymmetric_synapses_per_layer = []
-        for layer in BDM04_excitatory_types.keys():
-            if layer != 'extrinsic':
-                sum = 0
-                for type in BDM04_excitatory_types[layer]:
-                    sum = sum + asymmetric_synapses_per_type[BDM04_targets.index(type)]
-
-                layers.append(layer)
-                asymmetric_synapses_per_layer.append(sum)
-
-        total = np.sum(asymmetric_synapses_per_layer)
-        for i in range(5):
-            # layer = BDM04_excitatory_types.keys()[i]
-            fraction = asymmetric_synapses_per_layer[i] / total
-            print('Cell layer: {} excitatory synapses: {}%'.format(layers[i], int(round(fraction*100))))
-
-
 class Markov:
     """
     Data from Markov et al. (2014) Journal of Comparative Neurology and Markov et al. (2014) Cerebral Cortex.
@@ -1729,14 +1565,6 @@ def _total_thickness(thickness):
 if __name__ == '__main__':
     area = 'V2'
     layer = '4'
-
-    a = synapses_per_neuron(area, 'extrinsic', layer)
-    b = synapses_per_neuron(area, '2/3', layer)
-    c = synapses_per_neuron(area, '4', layer)
-    d = synapses_per_neuron(area, '5', layer)
-    e = synapses_per_neuron(area, '6', layer)
-    print('Binzegger: {} {} {} {} {}'.format(a, b, c, d, e))
-    print('Binzegger total: {}'.format(b + c + d + e))
 
     sd = SchmidtData()
     a = sd.interarea_synapses_per_neuron(area, layer)
