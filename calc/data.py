@@ -958,6 +958,7 @@ BDM04_excitatory_types = {
     '6': ['p6(L4)', 'p6(L5/6)'],
     'thalamocortical': ['X/Y'],
     'extrinsic': ['as'],
+    'interlaminar': ['sp1', 'p2/3', 'ss4(L4)', 'ss4(L2/3)', 'p4', 'p5(L2/3)', 'p5(L5/6)', 'p6(L4)', 'p6(L5/6)'],
     'all': ['sp1', 'p2/3', 'ss4(L4)', 'ss4(L2/3)', 'p4', 'p5(L2/3)', 'p5(L5/6)', 'p6(L4)', 'p6(L5/6)', 'X/Y', 'as']
 }
 
@@ -1149,7 +1150,7 @@ class E07:
         plt.xlabel('Distance from V1')
         plt.ylabel('Basal spine count')
         plt.tight_layout()
-        plt.savefig('analysis/figures/spine-count.eps')
+        plt.savefig('../generated-files/figures/spine-count.eps')
         plt.show()
 
 
@@ -1197,7 +1198,7 @@ def synapses_per_neuron(area, source_layer, target_layer):
 
     # sum over sources and weighted average over targets ...
     source_types = BDM04_excitatory_types[source_layer] # cell types in source layer (regardless of where synapses are)
-    all_source_types = BDM04_excitatory_types['all']
+    interlaminar_source_types = BDM04_excitatory_types['interlaminar']
     target_types = BDM04_excitatory_types[target_layer]
 
     total_inputs_from_source = np.zeros(n_target_types)
@@ -1205,7 +1206,7 @@ def synapses_per_neuron(area, source_layer, target_layer):
     for i in range(n_source_types):
         if BDM04_sources[i] in source_types:
             total_inputs_from_source = total_inputs_from_source + totals_across_layers[:,i]
-        if BDM04_sources[i] in all_source_types:
+        if BDM04_sources[i] in interlaminar_source_types:
             total_inputs = total_inputs + totals_across_layers[:,i]
 
     weighted_sum_from_source = 0.
@@ -1221,12 +1222,13 @@ def synapses_per_neuron(area, source_layer, target_layer):
     in_degree_from_source = weighted_sum_from_source / total_weight
     in_degree = weighted_sum / total_weight
 
-    col = 4 * ['2/3', '4', '5', '6'].index(target_layer) # column of S18_in_degree for extrinsic inputs to excitatory cells
-    monkey_in_degree = S18_in_degree['V1'][col] + S18_in_degree['V1'][col+1]
-    monkey_cat_ratio = monkey_in_degree / in_degree
+    sd = SchmidtData()
+    v1_synapses = sd.synapses_per_neuron_interlaminar_total('V1', target_layer)
+    area_synapses = sd.synapses_per_neuron_interlaminar_total(area, target_layer)
+    monkey_cat_ratio = v1_synapses / in_degree
 
     # For areas other than V1, scale by in-degree of target layer estimated by Schmidt et al.
-    area_ratio = S18_in_degree[area][col] / S18_in_degree['V1'][col]
+    area_ratio = area_synapses / v1_synapses
 
     return area_ratio * monkey_cat_ratio * in_degree_from_source
 
@@ -1258,6 +1260,91 @@ def _get_synapses_per_layer_cat_V1(layer):
 
         assert len(table) == 19 # expected # of rows
         return np.array(table)
+
+
+class SchmidtData:
+    def __init__(self):
+        with open('./data_files/schmidt/default_Data_Model_.json') as file:
+            self.data = json.load(file)
+
+    def interarea_synapses_per_neuron(self, area, target_layer):
+        """
+        :param area: name of area
+        :param target_layer: name of layer that contains cell bodies of target cells
+        :return: estimate of mean # excitatory synapses per neuron from other cortical areas
+        """
+        return self._synapses_per_neuron(area, target_layer, include_interlaminar=False)[0]
+
+    def interlaminar_synapses_per_neuron(self, area, source_layer, target_layer):
+        """
+        :param area: name of area
+        :param source_layer: name of layer that contains cell bodies of source cells
+        :param target_layer: name of layer that contains cell bodies of target cells
+        :return: estimate of mean # excitatory synapses per neuron from within same cortical area
+            and given source layer
+        """
+        patch_factor = self._get_patch_factor(area, target_layer)
+
+        source_layer = self._adapt_layer_name(source_layer)
+        target_layer = self._adapt_layer_name(target_layer)
+
+        synapses = self.data['synapses'][area][target_layer][area][source_layer]
+        neuron_number = self.data['neuron_numbers'][area][target_layer]
+
+        return synapses / neuron_number * patch_factor
+
+    #TODO: remove
+    def synapses_per_neuron_interlaminar_total(self, area, target_layer):
+        total = 0
+        for source_layer in ['2/3', '4', '5', '6']:
+            total += self.interlaminar_synapses_per_neuron(area, source_layer, target_layer)
+        return total
+
+    def _get_patch_factor(self, area, target_layer):
+        """
+        Estimates the ratio of interlaminar excitatory synapses to interlaminar excitatory synapses
+        within a 1mm^2 patch. The latter is the number estimated by Schmidt et al., but we want
+        the former. We assume all Schmidt et al.'s "external" synapses are from the same area but
+        outside the patch. This neglects synapses from areas outside the visual cortex (which Schmidt
+        et al. also count as "external" to their model) but these are probably a small minority
+        (Markov et al. 2011).
+        """
+        excitatory, inhibitory = self._synapses_per_neuron(area, target_layer, include_interarea=False)
+
+        excitatory_fraction = excitatory / (excitatory+inhibitory)
+        external = self._synapses_per_neuron_external(area, target_layer)
+        excitatory_full = excitatory + excitatory_fraction*external
+
+        return excitatory_full / excitatory
+
+    def _synapses_per_neuron(self, area, target_layer, include_interlaminar=True, include_interarea=True):
+        target = self.data['synapses'][area][self._adapt_layer_name(target_layer)]
+
+        excitatory = 0
+        inhibitory = 0
+        for source_area in target.keys():
+            interlaminar = (source_area == area)
+            if (interlaminar and include_interlaminar) or (not interlaminar and include_interarea):
+                for source_layer in target[source_area].keys():
+                    n = target[source_area][source_layer]
+                    if source_layer in ['23E', '4E', '5E', '6E']:
+                        excitatory += n
+                    elif source_layer in ['23I', '4I', '5I', '6I']:
+                        inhibitory += n
+
+        n = self._num_neurons(area, target_layer)
+
+        return excitatory/n, inhibitory/n
+
+    def _adapt_layer_name(self, layer):
+        return '{}E'.format(layer.replace('/', ''))
+
+    def _num_neurons(self, area, target_layer):
+        return self.data['neuron_numbers'][area][self._adapt_layer_name(target_layer)]
+
+    def _synapses_per_neuron_external(self, area, target_layer):
+        target = self.data['synapses'][area][self._adapt_layer_name(target_layer)]
+        return target['external']['external'] / self._num_neurons(area, target_layer)
 
 
 
@@ -1640,8 +1727,28 @@ def _total_thickness(thickness):
 
 
 if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-    data = Data()
+    area = 'V2'
+    layer = '4'
+
+    a = synapses_per_neuron(area, 'extrinsic', layer)
+    b = synapses_per_neuron(area, '2/3', layer)
+    c = synapses_per_neuron(area, '4', layer)
+    d = synapses_per_neuron(area, '5', layer)
+    e = synapses_per_neuron(area, '6', layer)
+    print('Binzegger: {} {} {} {} {}'.format(a, b, c, d, e))
+    print('Binzegger total: {}'.format(b + c + d + e))
+
+    sd = SchmidtData()
+    a = sd.interarea_synapses_per_neuron(area, layer)
+    b = sd.interlaminar_synapses_per_neuron(area, '2/3', layer)
+    c = sd.interlaminar_synapses_per_neuron(area, '4', layer)
+    d = sd.interlaminar_synapses_per_neuron(area, '5', layer)
+    e = sd.interlaminar_synapses_per_neuron(area, '6', layer)
+    print('Schmidt: {} {} {} {} {}'.format(a, b, c, d, e))
+    print('Schmidt total: {}'.format(b + c + d + e))
+
+    # import matplotlib.pyplot as plt
+    # data = Data()
     # print(data.synapses_per_connection)
 
     # n1 = []
@@ -1819,8 +1926,8 @@ if __name__ == '__main__':
 
     # synapses_per_neuron('MT', '4', '2/3')
 
-    e07 = E07()
-    e07.plot()
+    # e07 = E07()
+    # e07.plot()
 
     # get_centre(self, area):
 
