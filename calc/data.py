@@ -103,45 +103,6 @@ areas_M132 = ['???', '1', '2', '3', '5', '9', '10', '11', '12', '13', '14', '23'
 areas_FV91 = ['V1', 'V2', 'VP', 'V3', 'V3A', 'MT', 'V4t', 'V4', 'VOT', 'MSTd', 'PIP', 'PO', 'DP', 'MIP', 'MDP', 'VIP', 'LIP', 'PITv', 'PITd', 'MSTl', 'CITv', 'CITd', 'FEF', 'TF', 'AITv', 'FST', '7a', 'STPp', 'STPa', '46', 'AITd', 'TH']
 
 
-with open('./data_files/schmidt/default_Data_Model_.json') as file:
-    numbers = json.load(file)['realistic_neuron_numbers']
-
-
-def extrapolate_population_size_from_v1(area, layer):
-    mm2 = S18_surface_area[area]
-
-    # d: neurons / mm^3
-    # D: neurons / mm^2
-    # t: thickness (mm)
-    # l: layer (the above variables can have a layer subscript, otherwise they refer to all layers together)
-    # A: the current cortical area
-
-
-    # D_A = S18_density[area][1]
-    D_A = numbers[area]['total'] / S18_surface_area[area]
-
-    if area == 'V1':
-        D_GMKH = GMKH17_density_per_mm2_V1[layer]
-        # Normalize so total is according to Schmidt ...
-        D_l_A = D_GMKH * D_A / GMKH17_density_per_mm2_V1['1-6']
-    else:
-        layers = ['1', '2/3', '4', '5', '6']
-        d_GMKH = [GMKH17_density_per_mm3_V1[l] for l in layers]
-        t_GMKH = [GMKH17_thickness_V1[l] for l in layers]
-
-        # For non-V1 area A, we will assume d_l_A = a_A d_l_V1, where a_A is a constant (shared across layers).
-        # So ... D_A = sum(d_l_A t_l_A) = a_A sum(d_l_V1 t_l_A),
-        #        a_A = D_A / sum(d_l_V1 t_l_A),
-        #      D_l_A = d_l_A t_l_A = a_A d_l_V1 t_l_A.
-
-        # D_A = S18_density[area][1]
-        a_A = D_A / np.sum([GMKH17_density_per_mm3_V1[l] * S18_thickness[area][layers.index(l)] for l in layers])
-        D_l_A = a_A * GMKH17_density_per_mm3_V1[layer] * S18_thickness[area][layers.index(layer)]
-
-    # We multiply by 0.75 to match fraction excitatory cells; see Hendry et al. (1987) J Neurosci
-    return int(0.75 * mm2 * D_l_A)
-
-
 class InterAreaConnections:
     """
     Provides data on connections between cortical areas, from retrograde tracer injections.
@@ -299,42 +260,6 @@ Data from M. Schmidt, R. Bakker, C. C. Hilgetag, M. Diesmann, and S. J. van Alba
 macaque visual cortex,” Brain Struct. Funct., vol. 223, no. 3, pp. 1409–1435, 2018.
 """
 
-# 1, 2/3, 4, 5, 6, total
-S18_thickness = {
-    'V1': [0.09,0.37,0.46,0.17,0.16,1.24],
-    'V2': [0.12,0.6,0.24,0.25,0.25,1.46],
-    'VP': [0.18,0.63,0.32,0.21,0.25,1.59],
-    'V3': [0.23,0.7,0.31,0.16,0.19,1.59],
-    'V3A': [0.2,0.71,0.24,0.23,0.28,1.66],
-    'MT': [0.2,0.95,0.26,0.26,0.29,1.96],
-    'V4t': [0.22,0.8,0.29,0.26,0.31,1.88],
-    'V4': [0.18,1,0.24,0.24,0.24,1.89],
-    'VOT': [0.23,0.81,0.28,0.27,0.32,1.9],
-    'MSTd': [0.26,0.92,0.24,0.3,0.36,2.07],
-    'PIP': [0.26,0.92,0.24,0.3,0.36,2.07],
-    'PO': [0.26,0.92,0.24,0.3,0.36,2.07],
-    'DP': [0.26,0.91,0.23,0.3,0.36,2.06],
-    'MIP': [0.2,0.85,0.17,0.16,0.7,2.07],
-    'MDP': [0.26,0.92,0.24,0.3,0.36,2.07],
-    'VIP': [0.25,1.17,0.28,0.21,0.16,2.07],
-    'LIP': [0.25,1,0.24,0.24,0.57,2.3],
-    'PITv': [0.23,0.81,0.28,0.27,0.32,1.9],
-    'PITd': [0.23,0.81,0.28,0.27,0.32,1.9],
-    'MSTl': [0.26,0.92,0.24,0.3,0.36,2.07],
-    'CITv': [0.29,1.02,0.19,0.33,0.4,2.23],
-    'CITd': [0.29,1.02,0.19,0.33,0.4,2.23],
-    'FEF': [0.22,0.92,0.35,0.37,0.35,2.21],
-    'TF': [0.23,0.66,0.21,0.24,0.28,1.62],
-    'AITv': [0.34,1.2,0.23,0.39,0.47,2.63],
-    'FST': [0.51,0.9,0.18,0.3,0.36,2.25],
-    '7a': [0.35,1.24,0.21,0.41,0.48,2.68],
-    'STPp': [0.29,1.03,0.18,0.34,0.4,2.25],
-    'STPa': [0.29,1.03,0.18,0.34,0.4,2.25],
-    '46': [0.22,0.82,0.18,0.28,0.36,1.86],
-    'AITd': [0.34,1.2,0.23,0.39,0.47,2.63],
-    'TH': [0.28,0.65,0.12,0.57,0.26,1.87]
-}
-
 # Note most of these are similar to surface areas in FV91, but some are quite different, e.g. V1 (1484.63 vs. 1120),
 # DP (113.83 vs. 50), and STPp (245.48 vs. 120).
 S18_surface_area = {
@@ -372,52 +297,6 @@ S18_surface_area = {
     'MDP': 77.49
 }
 
-def check_schmidt_n():
-    # adding a few of these from suppl to check data file ...
-    S18_population_sizes = {
-        # Area 2/3E 2/3I 4E 4I 5E 5I 6E 6I Total
-        'V1': [47386, 13366, 70387, 17597, 20740, 4554, 19839, 4063, 197935],
-        'V2': [50521, 14250, 36685, 9171, 19079, 4189, 19248, 3941, 157087],
-        'VP': [52973, 14942, 49292, 12323, 15929, 3497, 19130, 3917, 172007],
-        'V3': [58475, 16494, 47428, 11857, 12056, 2647, 14529, 2975, 166465]
-    }
-
-    data = SchmidtData()
-    areas = ['V1', 'V2', 'V3']
-    layers = ['2/3', '4', '5', '6']
-    from_data_file = []
-    from_suppl = []
-    for area in areas:
-        for layer in layers:
-            layer_index = {'2/3': 0, '4': 2, '5': 4, '6': 6} # 2/3E 2/3I 4E 4I 5E 5I 6E 6I
-            from_suppl.append(S18_population_sizes[area][layer_index[layer]] * S18_surface_area[area])
-            from_data_file.append(data.neuron_numbers(area, layer))
-    plt.scatter(from_data_file, from_suppl)
-    plt.show()
-
-
-# Mappings from Markov et al. injections sites in M132 areas to FV91 areas.
-# Some mappings are many-to-one.
-S18_injection_site_mappings = {
-    'V1': 'V1',
-    'V2': 'V2',
-    'V4': 'V4',
-    'STPr': 'STPa',
-    'TEO': 'V4',
-    'STPi': 'STPp',
-    '7A': '7a',
-    'STPc': 'STPp',
-    'DP': 'DP',
-    '9/46d': 'FEF',
-    '8l': 'FEF',
-    '8m': 'FEF',
-    'MT': 'MSTd',
-    '46d': '46',
-    '9/46v': '46',
-    'TEpd': 'CITv',
-    'PBr': 'STPp'
-}
-
 S18_distance = [
     [0,17.9,19.9,14.6,16.8,22.5,23.1,22.9,29,26.8,18.8,21.5,23.7,24.5,29.2,26.3,27.8,32.9,31.6,28.4,38.8,37.7,57.1,29.6,43.8,33.7,28.2,38,44.3,62.9,46.3,30.8],
     [17.9,0,16.1,17.8,18.2,20,20.5,21.2,24.5,24.4,19.8,23.8,24.6,26,30.8,25.8,27.6,28,27.3,24.4,33.4,32.5,53.9,24.8,38.2,28.9,27.6,34.3,39.2,59.5,40.9,26.3],
@@ -452,51 +331,6 @@ S18_distance = [
     [46.3,40.9,31.2,43.3,40.4,28.4,29,30.3,21.6,31.6,39,43.9,44.7,44.7,48.9,38.1,40.9,17.2,19.7,23.9,10.9,10.7,35.2,19.6,7.4,15.5,40,22.2,10.2,38.3,0,21.8],
     [30.8,26.3,19.9,27.5,25.1,17.1,18.9,22.6,18.1,20.6,22.4,26.2,29.4,28.2,31.4,24.9,28.2,18.1,19.2,15.8,18.3,17.2,39.8,9.7,18.5,14.6,27.6,23.3,20.7,44.6,21.8,0]
 ]
-
-# Structural type, neurons/mm^2, and total thickness.
-# From Hilgetag et al. (2016) with area mappings suggested by Schmidt et al. (2018)
-# Hilgetag Claus C., et al. "The primate connectome in context: principles of connections
-# of the cortical visual system." NeuroImage 134 (2016): 685-702,
-# Areas marked with "inferred" are not in the dataset, so we use the mean of other areas
-# at the same hierarchical level, following Schmidt et al.
-# Areas marked "manual" were manually assigned type 5 by Schmidt et al.
-S18_density = {
-    'V1': [8, 161365,1.24],
-    'V2': [7,97619,1.46],
-    'V3': [7,97619,None], # inferred
-    'VP': [7,97619,None], # inferred
-    'V4': [6,71237,1.89],
-    'MT': [6,65992,1.96],
-    'VOT': [6,63271,2.13],
-    'PITd': [6,63271,2.13],
-    'PITv': [6,63271,2.13],
-    'V3A': [6,61382,1.66],
-    'V4t': [6,64737,None], # inferred
-    'MIP': [5,47137,None], # manual inferred
-    'MDP': [5,47137,None], # manual inferred
-    'LIP': [5,(53706+45237)/2,2.3],
-    'DP': [5,48015,2.06],
-    'TF': [5,46084,1.62],
-    'FEF': [5,44978,2.21],
-    'CIT': [5,47137,None], # inferred
-    'MSTd': [5,47137,None], # inferred
-    'MSTl': [5,47137,None], # inferred
-    'PIP': [5,47137,None], # inferred
-    'PITd': [5,47137,None], # inferred
-    'PITv': [5,47137,None], # inferred
-    'PO': [5,47137,None], # inferred
-    'VIP': [5,47137,None], # inferred
-    'AITd': [4,38840,2.63],
-    'AITv': [4,38840,2.63],
-    'CITd': [4,38840,2.63],
-    'CITv': [4,38840,2.63],
-    '46': [4,38027,1.86],
-    '7a': [4,36230,2.68],
-    'FST': [4,38269,None], # inferred
-    'STPa': [4,38269,None], # inferred
-    'STPp': [4,38269,None], # inferred
-    'TH': [2,33196,1.87],
-}
 
 """
 TODO: omit callosal neurons:
@@ -1443,44 +1277,8 @@ def markov_FLNe_sums():
     print(np.min(totals))
 
 
-def compare_population_size_estimates():
-    # extrapolations are slightly larger for L2/3 and smaller for 4, 5, 6
-    extrapolations = []
-    schmidts = []
-    sd = SchmidtData()
-    for area in areas_FV91:
-        for layer in ['2/3', '4', '5', '6']:
-            extrapolations.append(extrapolate_population_size_from_v1(area, layer))
-            schmidts.append(sd.neuron_numbers(area, layer))
-            if extrapolations[-1] > 1.1*schmidts[-1]:
-                print('{} {}'.format(area, layer))
-
-    print('r={}'.format(np.corrcoef(extrapolations, schmidts)[0][1]))
-    plt.scatter(extrapolations, schmidts)
-    plt.show()
-
-
-def check_population_size_estimates():
-    # I thought Schmidt estimates were based on Hilgetag, but looks like no; there
-    # is some relationship but their data is personal communication (Barbas) and
-    # they have scaled it to compensate for undersampling; looks like a sublinear
-    # relationship for some reason.
-    sd = SchmidtData()
-    schmidt = []
-    hilgetag = []
-    for area in areas_FV91:
-        schmidt.append(sd.data['realistic_neuron_numbers'][area]['total'])
-        hilgetag.append(S18_density[area][1] * S18_surface_area[area])
-    print(np.sum(schmidt))
-    print(np.sum(hilgetag))
-    plt.scatter(hilgetag, schmidt)
-    plt.show()
-
-
 if __name__ == '__main__':
-    compare_population_size_estimates()
-    # check_population_size_estimates()
-
+    pass
     # markov_FLNe_sums()
 
     # data = Data()
