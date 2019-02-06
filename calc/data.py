@@ -44,42 +44,7 @@ class Data:
         :return: Estimated number of excitatory neurons in the given area/layer per hemisphere; we
             assume convolutional units are similar to excitatory neurons based on Parisien et al. (2008).
         """
-        mm2 = S18_surface_area[area]
-
-        # d: neurons / mm^3
-        # D: neurons / mm^2
-        # t: thickness (mm)
-        # l: layer (the above variables can have a layer subscript, otherwise they refer to all layers together)
-        # A: the current cortical area
-
-        if area == 'V1':
-            D_GMKH = GMKH17_density_per_mm2_V1[layer]
-            # Normalize so total is according to Schmidt ...
-            D_l_A = D_GMKH * S18_density['V1'][1] / GMKH17_density_per_mm2_V1['1-6']
-        else:
-            layers = ['1', '2/3', '4', '5', '6']
-            d_GMKH = [GMKH17_density_per_mm3_V1[l] for l in layers]
-            t_GMKH = [GMKH17_thickness_V1[l] for l in layers]
-
-            # For non-V1 area A, we will assume d_l_A = a_A d_l_V1, where a_A is a constant (shared across layers).
-            # So ... D_A = sum(d_l_A t_l_A) = a_A sum(d_l_V1 t_l_A),
-            #        a_A = D_A / sum(d_l_V1 t_l_A),
-            #      D_l_A = d_l_A t_l_A = a_A d_l_V1 t_l_A.
-
-            D_A = S18_density[area][1]
-            a_A = D_A / np.sum([GMKH17_density_per_mm3_V1[l] * S18_thickness[area][layers.index(l)] for l in layers])
-            D_l_A = a_A * GMKH17_density_per_mm3_V1[layer] * S18_thickness[area][layers.index(layer)]
-
-        # We multiply by 0.75 to match fraction excitatory cells; see Hendry et al. (1987) J Neurosci
-        return int(0.75 * mm2 * D_l_A)
-
-    # def get_neuron_numbers_Schmidt(self, area, layer):
-    #     if layer == '2/3':
-    #         population = '23E'
-    #     else:
-    #         population = layer + 'E'
-    #
-    #     return self.dat['realistic_neuron_numbers'][area][population]
+        return self.sd.neuron_numbers(area, layer)
 
     def get_receptive_field_size(self, area):
         """
@@ -136,6 +101,45 @@ areas_M132 = ['???', '1', '2', '3', '5', '9', '10', '11', '12', '13', '14', '23'
 
 
 areas_FV91 = ['V1', 'V2', 'VP', 'V3', 'V3A', 'MT', 'V4t', 'V4', 'VOT', 'MSTd', 'PIP', 'PO', 'DP', 'MIP', 'MDP', 'VIP', 'LIP', 'PITv', 'PITd', 'MSTl', 'CITv', 'CITd', 'FEF', 'TF', 'AITv', 'FST', '7a', 'STPp', 'STPa', '46', 'AITd', 'TH']
+
+
+with open('./data_files/schmidt/default_Data_Model_.json') as file:
+    numbers = json.load(file)['realistic_neuron_numbers']
+
+
+def extrapolate_population_size_from_v1(area, layer):
+    mm2 = S18_surface_area[area]
+
+    # d: neurons / mm^3
+    # D: neurons / mm^2
+    # t: thickness (mm)
+    # l: layer (the above variables can have a layer subscript, otherwise they refer to all layers together)
+    # A: the current cortical area
+
+
+    # D_A = S18_density[area][1]
+    D_A = numbers[area]['total'] / S18_surface_area[area]
+
+    if area == 'V1':
+        D_GMKH = GMKH17_density_per_mm2_V1[layer]
+        # Normalize so total is according to Schmidt ...
+        D_l_A = D_GMKH * D_A / GMKH17_density_per_mm2_V1['1-6']
+    else:
+        layers = ['1', '2/3', '4', '5', '6']
+        d_GMKH = [GMKH17_density_per_mm3_V1[l] for l in layers]
+        t_GMKH = [GMKH17_thickness_V1[l] for l in layers]
+
+        # For non-V1 area A, we will assume d_l_A = a_A d_l_V1, where a_A is a constant (shared across layers).
+        # So ... D_A = sum(d_l_A t_l_A) = a_A sum(d_l_V1 t_l_A),
+        #        a_A = D_A / sum(d_l_V1 t_l_A),
+        #      D_l_A = d_l_A t_l_A = a_A d_l_V1 t_l_A.
+
+        # D_A = S18_density[area][1]
+        a_A = D_A / np.sum([GMKH17_density_per_mm3_V1[l] * S18_thickness[area][layers.index(l)] for l in layers])
+        D_l_A = a_A * GMKH17_density_per_mm3_V1[layer] * S18_thickness[area][layers.index(layer)]
+
+    # We multiply by 0.75 to match fraction excitatory cells; see Hendry et al. (1987) J Neurosci
+    return int(0.75 * mm2 * D_l_A)
 
 
 class InterAreaConnections:
@@ -367,6 +371,30 @@ S18_surface_area = {
     'MSTd': 120.57,
     'MDP': 77.49
 }
+
+def check_schmidt_n():
+    # adding a few of these from suppl to check data file ...
+    S18_population_sizes = {
+        # Area 2/3E 2/3I 4E 4I 5E 5I 6E 6I Total
+        'V1': [47386, 13366, 70387, 17597, 20740, 4554, 19839, 4063, 197935],
+        'V2': [50521, 14250, 36685, 9171, 19079, 4189, 19248, 3941, 157087],
+        'VP': [52973, 14942, 49292, 12323, 15929, 3497, 19130, 3917, 172007],
+        'V3': [58475, 16494, 47428, 11857, 12056, 2647, 14529, 2975, 166465]
+    }
+
+    data = SchmidtData()
+    areas = ['V1', 'V2', 'V3']
+    layers = ['2/3', '4', '5', '6']
+    from_data_file = []
+    from_suppl = []
+    for area in areas:
+        for layer in layers:
+            layer_index = {'2/3': 0, '4': 2, '5': 4, '6': 6} # 2/3E 2/3I 4E 4I 5E 5I 6E 6I
+            from_suppl.append(S18_population_sizes[area][layer_index[layer]] * S18_surface_area[area])
+            from_data_file.append(data.neuron_numbers(area, layer))
+    plt.scatter(from_data_file, from_suppl)
+    plt.show()
+
 
 # Mappings from Markov et al. injections sites in M132 areas to FV91 areas.
 # Some mappings are many-to-one.
@@ -965,6 +993,9 @@ class SchmidtData:
         with open('./data_files/schmidt/default_Data_Model_.json') as file:
             self.data = json.load(file)
 
+    def neuron_numbers(self, area, layer):
+        return self.data['realistic_neuron_numbers'][area][self._adapt_layer_name(layer)]
+
     def interarea_synapses_per_neuron(self, area, target_layer):
         """
         :param area: name of area
@@ -990,13 +1021,6 @@ class SchmidtData:
         neuron_number = self.data['neuron_numbers'][area][target_layer]
 
         return synapses / neuron_number * patch_factor
-
-    #TODO: remove
-    def synapses_per_neuron_interlaminar_total(self, area, target_layer):
-        total = 0
-        for source_layer in ['2/3', '4', '5', '6']:
-            total += self.interlaminar_synapses_per_neuron(area, source_layer, target_layer)
-        return total
 
     def _get_patch_factor(self, area, target_layer):
         """
@@ -1419,13 +1443,49 @@ def markov_FLNe_sums():
     print(np.min(totals))
 
 
+def compare_population_size_estimates():
+    # extrapolations are slightly larger for L2/3 and smaller for 4, 5, 6
+    extrapolations = []
+    schmidts = []
+    sd = SchmidtData()
+    for area in areas_FV91:
+        for layer in ['2/3', '4', '5', '6']:
+            extrapolations.append(extrapolate_population_size_from_v1(area, layer))
+            schmidts.append(sd.neuron_numbers(area, layer))
+            if extrapolations[-1] > 1.1*schmidts[-1]:
+                print('{} {}'.format(area, layer))
+
+    print('r={}'.format(np.corrcoef(extrapolations, schmidts)[0][1]))
+    plt.scatter(extrapolations, schmidts)
+    plt.show()
+
+
+def check_population_size_estimates():
+    # I thought Schmidt estimates were based on Hilgetag, but looks like no; there
+    # is some relationship but their data is personal communication (Barbas) and
+    # they have scaled it to compensate for undersampling; looks like a sublinear
+    # relationship for some reason.
+    sd = SchmidtData()
+    schmidt = []
+    hilgetag = []
+    for area in areas_FV91:
+        schmidt.append(sd.data['realistic_neuron_numbers'][area]['total'])
+        hilgetag.append(S18_density[area][1] * S18_surface_area[area])
+    print(np.sum(schmidt))
+    print(np.sum(hilgetag))
+    plt.scatter(hilgetag, schmidt)
+    plt.show()
+
+
 if __name__ == '__main__':
+    compare_population_size_estimates()
+    # check_population_size_estimates()
+
     # markov_FLNe_sums()
 
     # data = Data()
-
-    iac = InterAreaConnections()
-    iac.compare_markov_and_non_markov_connection_strengths()
+    # iac = InterAreaConnections()
+    # iac.compare_markov_and_non_markov_connection_strengths()
 
     # area = 'V2'
     # layer = '4'
