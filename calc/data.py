@@ -5,6 +5,7 @@ import inspect
 import numpy as np
 import csv
 import json
+import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
 
@@ -21,7 +22,6 @@ class Data:
 
         with open('/Users/bptripp/lib/multi-area-model/multiarea_model/data_multiarea/default_Data_Model_.json', 'r') as f:
             self.dat = json.load(f)
-
 
     def get_areas(self):
         """
@@ -165,7 +165,7 @@ class InterAreaConnections:
         self.markov = markov
         self.areas = areas_FV91
 
-        with open('/Users/bptripp/lib/multi-area-model/multiarea_model/data_multiarea/default_Data_Model_.json', 'r') as f:
+        with open('./data_files/schmidt/default_Data_Model_.json', 'r') as f:
             self.dat = json.load(f)
 
     def get_connectivity_grid(self):
@@ -182,76 +182,6 @@ class InterAreaConnections:
                     grid[i,self.areas.index(source)] = 1
         return grid
 
-    def get_interpolated_FLNe(self):
-        """
-        :return: FLNe grid for FV91 visual areas. For areas injected by Markov et al.,
-            FLNe is estimated according to fraction overlap between M132 areas (used by
-            Markov et al.) and FV91 areas (used here). For other areas, we interpolate
-            based on inter-area distances through white matter. The distances are
-            provided by Schmidt et al.
-        """
-        remapped_FLNe = self.get_remapped_FLNe() #data from Markov, mapped onto FV91 areas
-
-        # calculate curve fit to estimate connections to areas not injected by Markov et al.
-        logFLNe = np.log10(remapped_FLNe).flatten()
-        dist = np.array(S18_distance).flatten()
-        ind = np.where(np.logical_and(dist > 0, np.isfinite(logFLNe)))
-        logFLNe = logFLNe[ind]
-        dist = dist[ind]
-        coeffs = np.polyfit(dist, logFLNe, 1)
-
-        grid = self.get_connectivity_grid()
-
-        interpolated_FLNe = np.exp(coeffs[1] + coeffs[0] * np.array(S18_distance))
-        # interpolated_FLNe = np.multiply(interpolated_FLNe, grid)
-
-        remapped_rows = np.isfinite(np.sum(remapped_FLNe, axis=1))
-        remapped_totals = np.zeros(remapped_rows.shape)
-
-        for i in range(len(remapped_rows)):
-            if remapped_rows[i]:
-                interpolated_FLNe[i,:] = remapped_FLNe[i,:]
-                remapped_totals[i] = np.sum(remapped_FLNe[i,:])
-
-        interpolated_FLNe = np.multiply(interpolated_FLNe, grid)
-
-        # for rows from Markov et al., recover sum of FLNe from before removing dubious connections
-        for i in range(len(remapped_rows)):
-            if remapped_rows[i]:
-                interpolated_FLNe[i,:] = interpolated_FLNe[i,:] / remapped_totals[i]
-
-        return interpolated_FLNe
-
-    def get_remapped_FLNe(self):
-        """
-        :return: FLNe grid for FV91 areas, including only areas injected by Markov et al. They report
-            FLNe for the M132 parcellation, but here we attempt to map onto FV91 according to degree
-            overlap from CoCoMac.
-        """
-        n = len(self.areas)
-        grid = np.zeros((n, n))
-        for i in range(n):
-            sites = self.get_M132_injection_sites(self.areas[i])
-            mapped = []
-            for j in range(len(sites)):
-                M132_FLNe = self.get_M132_FLNe(sites[j])
-                mapped.append(self.map_FLNe_M132_to_FV91(M132_FLNe))
-            grid[i,:] = np.mean(mapped, axis=0)
-            grid[i,i] = 0
-        return grid
-
-    def map_FLNe_M132_to_FV91(self, M132_FLNe):
-        """
-        :param M132_FLNe: result of get_M132_FLNe() for a certain target
-        :return: list of FLNe for each area in areas_FV91
-        """
-        result = np.zeros(len(areas_FV91))
-        for source_M132 in M132_FLNe.keys():
-            FLNe = M132_FLNe[source_M132]
-            fractions = self._get_overlap_fractions(source_M132)
-            result += FLNe * fractions
-        return result
-
     def get_M132_FLNe(self, target):
         """
         :param target: A M132 area
@@ -260,153 +190,6 @@ class InterAreaConnections:
         result = dict()
         for source in self.markov.get_sources(target):
             result[source] = self.markov.get_FLNe(source, target)
-        return result
-
-    def get_interpolated_SLN(self):
-        """
-        :return: SLN grid for FV91 visual areas. For areas injected by Markov et al.,
-            SLN is estimated according to fraction overlap between M132 areas (used by
-            Markov et al.) and FV91 areas (used here). For other areas, we estimate
-            (following Schmidt et al.) based on ratio of neuron densities in each area.
-        """
-
-        remapped_SLN = self.get_remapped_SLN()
-
-        # find curve fit to extrapolate to non-injected areas
-        density_log_ratios = []
-        SLNs = []
-        n = len(areas_FV91)
-        density_ratios = self._get_density_ratio_grid(interpolate=False)
-        for i in range(n):
-            for j in range(n):
-                if np.isfinite(density_ratios[i,j]) and remapped_SLN[i,j] > 0:
-                    log_ratio = np.log(density_ratios[i,j])
-                    density_log_ratios.append(log_ratio)
-                    SLNs.append(remapped_SLN[i, j])
-        popt, pcov = curve_fit(sigmoid, density_log_ratios, np.array(SLNs)/100, p0=[0, -1])
-
-        grid = self.get_connectivity_grid()
-        density_ratios = self._get_density_ratio_grid(interpolate=True)
-        interpolated_SLN = 100*sigmoid(np.log(density_ratios), popt[0], popt[1])
-
-        # plt.scatter(np.log(density_ratios.flatten()), interpolated_SLN.flatten())
-        # plt.scatter(density_log_ratios, SLNs)
-        # x = np.linspace(-2, 2, 20)
-        # plt.plot(x, 100*sigmoid(x, popt[0], popt[1]))
-        # plt.show()
-
-        for i in range(n):
-            if self.get_M132_injection_sites(self.areas[i]):
-                interpolated_SLN[i,:] = remapped_SLN[i,:]
-
-        result = np.multiply(interpolated_SLN, grid)
-        result[np.where(result == 0)] = np.nan
-        return result
-
-    def _get_density_ratio_grid(self, interpolate=False):
-        n = len(areas_FV91)
-
-        result = np.nan * np.zeros((n,n))
-        for i in range(n):
-            density_i = self._get_density(areas_FV91[i], interpolate=interpolate)
-            for j in range(n):
-                density_j = self._get_density(areas_FV91[j], interpolate=interpolate)
-                if density_i and density_j:
-                    result[i,j] = density_i / density_j
-
-        return result
-
-    def _get_density(self, area_FV91, interpolate=False):
-        """
-        :param area_FV91: a FV91 area
-        :param interpolate (False): if True, fit missing results as a function of distance
-            from V1 (constant for >30mm; linear fit for closer areas)
-        :return: neurons/mm^3 if available, otherwise None or an estimate if interpolate=True
-        """
-        result = None
-
-        if area_FV91 in S18_density.keys():
-            result = S18_density[area_FV91][1]
-
-        if interpolate and result is None:
-            distance_from_V1 = S18_distance[0][areas_FV91.index(area_FV91)]
-            if distance_from_V1 > 30:
-                result = 39727.5
-            else:
-                result = 152728.28141914 - 3796.74396312*distance_from_V1
-
-        return result
-
-    def get_remapped_SLN(self):
-        """
-        :return: SLN grid for FV91 areas, including only areas injected by Markov et al. They report
-            SLN for the M132 parcellation, but here we attempt to map onto FV91 according to degree
-            overlap from CoCoMac.
-        """
-        n = len(self.areas)
-        grid = np.zeros((n, n))
-        for i in range(n):
-            sites = self.get_M132_injection_sites(self.areas[i])
-            mapped = []
-            for j in range(len(sites)):
-                mapped.append(self.map_SLN_M132_to_FV91(sites[j]))
-            grid[i,:] = np.mean(mapped, axis=0)
-            grid[i,i] = 0
-        return grid
-
-    def map_SLN_M132_to_FV91(self, target_M132):
-        """
-        This implements the equation on pg 1416 of Schmidt et al. (2018).
-
-        :param M132_target: the target area
-        :return: list of SLN for each area in areas_FV91
-        """
-        M132_SLN = self.get_M132_SLN(target_M132)
-        numerator = np.zeros(len(areas_FV91))
-        denominator = np.zeros(len(areas_FV91))
-        for source_M132 in M132_SLN.keys():
-            FLNe = self.markov.get_FLNe(source_M132, target_M132)
-            SLN = M132_SLN[source_M132]
-            if FLNe and SLN:
-                fractions = self._get_overlap_fractions(source_M132)
-                numerator += FLNe * SLN * fractions
-                denominator += FLNe * fractions
-        return np.divide(numerator, denominator)
-
-    def _get_overlap_fractions(self, area_M132):
-        """
-        :param area_M132: A M132 area
-        :return: fraction overlap between given M132 area and each FV91 area (in order of areas_FV91)
-        """
-        fractions = np.zeros(len(areas_FV91))
-        percents = self.cocomac.get_M132_to_FV91(area_M132)
-        if percents:
-            for area_FV91 in percents.keys():
-                if area_FV91 in areas_FV91:
-                    ind = areas_FV91.index(area_FV91)
-                    fractions[ind] += percents[area_FV91] / 100
-        return fractions
-
-    def get_M132_injection_sites(self, FV91_area):
-        """
-        :param FV91_area: An area in the FV91 parcellation
-        :return: M132 areas of injection sites in Markov et al. that fall in the FV91_area
-            (from Schmidt et al.)
-        """
-        result = []
-        for key in S18_injection_site_mappings.keys():
-            if S18_injection_site_mappings[key] == FV91_area:
-                result.append(key)
-        return result
-
-    def get_M132_SLN(self, target):
-        """
-        :param target: A M132 area
-        :return: a dictionary with M132 connected areas as keys and %SLN as values
-        """
-        result = dict()
-        for source in self.markov.get_sources(target):
-            result[source] = self.markov.get_SLN(source, target)
         return result
 
     def get_interpolated_SLN_Schmidt(self):
@@ -435,13 +218,63 @@ class InterAreaConnections:
 
         result = np.multiply(interpolated_FLNe, self.get_connectivity_grid())
 
-        # for rows from Markov et al., recover sum of FLNe from before removing dubious connections
-        remapped_areas = ['V1', 'V2', 'V4', 'MSTd', 'DP', 'CITv', 'FEF', '7a', 'STPp', 'STPa', '46']
+        # make all the rows sum to 1
         for i in range(n):
-            if self.areas[i] in remapped_areas:
-                result[i,:] = result[i,:] / np.sum(interpolated_FLNe[i,:])
+            total_fraction = np.sum(result[i,:])
+            if total_fraction > 0:
+                result[i,:] = result[i,:] / total_fraction
 
         return result
+
+    def compare_markov_and_non_markov_connection_strengths(self):
+        n = len(self.areas)
+        interpolated_FLNe = np.zeros((n,n))
+        for i in range(n):
+            d = self.dat['FLN_completed'][self.areas[i]]
+            for j in range(n):
+                if self.areas[j] in d:
+                    interpolated_FLNe[i,j] = d[self.areas[j]]
+
+        grid = self.get_connectivity_grid()
+
+        remapped_areas = ['V1', 'V2', 'V4', 'MSTd', 'DP', 'CITv', 'FEF', '7a', 'STPp', 'STPa', '46']
+        markov = []
+        non_markov = []
+        for i in range(n):
+            if self.areas[i] in remapped_areas:
+                for j in range(n):
+                    if interpolated_FLNe[i][j] > 0:
+                        if grid[i][j]:
+                            markov.append(interpolated_FLNe[i][j])
+                        else:
+                            non_markov.append(interpolated_FLNe[i][j])
+
+        print('connection strength ratio: {}'.format(np.mean(non_markov) / np.mean(markov)))
+
+        markov = np.log10(markov)
+        non_markov = np.log10(non_markov)
+        low = min(np.min(markov), np.min(non_markov))
+        high = max(np.max(markov), np.max(non_markov))
+
+        # Remapped connections not in CoCoMac are fairly strong, so we assume they
+        # are spurious rather than "not found previously" as in Markov et al. (2014)
+        # Compare Markov et al. Figure 9 (mode of NFP strengths is about -4.5, in
+        # contrast with about -3 here).
+        bins = np.linspace(low, high, 21)
+        plt.figure(figsize=(4,3))
+        plt.subplot(2,1,1)
+        plt.hist(markov, bins)
+        plt.ylim((0, 30))
+        plt.ylabel('Count')
+        plt.title('Remapped connections in CoCoMac')
+        plt.subplot(2,1,2)
+        plt.hist(non_markov, bins)
+        plt.ylim((0, 30))
+        plt.ylabel('Count')
+        plt.xlabel('Log-FLN')
+        plt.title('Remapped connections not in CoCoMac')
+        plt.tight_layout()
+        plt.show()
 
 
 def sigmoid(x, centre, gain):
@@ -1562,18 +1395,48 @@ def _total_thickness(thickness):
     return total
 
 
-if __name__ == '__main__':
-    area = 'V2'
-    layer = '4'
+def markov_FLNe_sums():
+    """
+    Prints information about total FLNe to visual areas from other visual areas, from
+    Markov data.
+    """
+    visual_areas = ['7A', '7B', '7m', '7op', 'AIP', 'DP', 'FST', 'IPa', 'LIP', 'MIP', 'MST', 'MT', 'PGa', 'PIP', 'Pro.St', 'STPc', 'STPi', 'STPr', 'TEad', 'TEa/ma', 'TEa/mp', 'TEav', 'TEO', 'TEOm', 'TEpd', 'TEpv', 'TH/TF', 'TPt', 'V1', 'V2', 'V3', 'V3A', 'V4', 'V4t', 'V6', 'V6A', 'VIP']
 
-    sd = SchmidtData()
-    a = sd.interarea_synapses_per_neuron(area, layer)
-    b = sd.interlaminar_synapses_per_neuron(area, '2/3', layer)
-    c = sd.interlaminar_synapses_per_neuron(area, '4', layer)
-    d = sd.interlaminar_synapses_per_neuron(area, '5', layer)
-    e = sd.interlaminar_synapses_per_neuron(area, '6', layer)
-    print('Schmidt: {} {} {} {} {}'.format(a, b, c, d, e))
-    print('Schmidt total: {}'.format(b + c + d + e))
+    markov = Markov()
+    totals = []
+    for target in visual_areas:
+        if markov.is_injection_site(target):
+            total = 0
+            for source in areas_M132:
+                FLNe = markov.get_FLNe(source, target)
+                if FLNe is not None and source in visual_areas:
+                    total += FLNe
+            totals.append(total)
+            if total < .7:
+                print(target)
+    print(np.mean(totals))
+    print(np.std(totals))
+    print(np.min(totals))
+
+
+if __name__ == '__main__':
+    # markov_FLNe_sums()
+
+    # data = Data()
+
+    iac = InterAreaConnections()
+    iac.compare_markov_and_non_markov_connection_strengths()
+
+    # area = 'V2'
+    # layer = '4'
+    # sd = SchmidtData()
+    # a = sd.interarea_synapses_per_neuron(area, layer)
+    # b = sd.interlaminar_synapses_per_neuron(area, '2/3', layer)
+    # c = sd.interlaminar_synapses_per_neuron(area, '4', layer)
+    # d = sd.interlaminar_synapses_per_neuron(area, '5', layer)
+    # e = sd.interlaminar_synapses_per_neuron(area, '6', layer)
+    # print('Schmidt: {} {} {} {} {}'.format(a, b, c, d, e))
+    # print('Schmidt total: {}'.format(b + c + d + e))
 
     # import matplotlib.pyplot as plt
     # data = Data()
