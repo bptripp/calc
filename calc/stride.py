@@ -18,8 +18,7 @@ result. The algorithm is as follows:
 2.3: If cumulative stride along path is greater than image width or doesn't equal
     gain from start to end (if cumulative strides at each end are known) return to 2.1
 
-TODO: do we need to enumerate all options or just try random ones?
-TODO: This code assumes the network has a single input.
+Note this code assumes the network has a single input.
 """
 
 import numpy as np
@@ -30,6 +29,13 @@ from calc.data import areas_FV91, E07
 
 
 def get_stride_pattern(system, max_cumulative_stride=512, best_of=10):
+    """
+    :param system: system.System (biological network parameters)
+    :param max_cumulative_stride: largest allowable cumulative stride, typically smallest image dimension
+    :param best_of: number of random patterns to try
+    :return: best stride pattern found; list of cost of different attempts relative to hints from
+        physiology; first several examples
+    """
     best_distance = 1e10
     best_pattern = None
     distances = []
@@ -80,7 +86,16 @@ class StridePattern:
 
 
     def set_hints(self, image_layer=0, image_channels=3, V1_channels=130, other_channels={'LGNparvo': 4, 'LGNmagno': 2, 'LGNkonio': 1}):
-        # inferred from spine counts
+        """
+        Sets hints from physiology about cumulative strides in each layer. These are based on
+        the idea that the number of channels in a layer should scale with the density of spines on
+        basal dendrites (see rationale in paper).
+
+        :param image_layer: index of network layer that corresponds to input image
+        :param image_channels: number of channels in image (typically 3)
+        :param V1_channels: suggested number of channels in V1 layers (see rationale in paper)
+        :param other_channels: manual suggestions for subcortical channels
+        """
 
         image_pixels = np.sqrt(system.populations[image_layer].n / image_channels)
 
@@ -105,6 +120,11 @@ class StridePattern:
                 self.cumulative_hints[i] = image_pixels / pixels
 
     def distance_from_hints(self):
+        """
+        :return: A cost function based on the differences between cumulative strides and corresponding
+            physiological hints (root of mean of squared log-ratios)
+        """
+
         total = 0
         count = 0
         for i in range(len(self.cumulative_hints)):
@@ -157,7 +177,7 @@ class StridePattern:
 
             # print('start c: {} end c: {} max c: {} max stride: {} len: {}'.format(
             #     start_cumulative, end_cumulative, self.max_cumulative_stride, max_stride, len(path)-1))
-            success = self.init_path(path, exact_cumulative=self.cumulatives[end_index], max_stride=max_stride)
+            success = self.init_path(path, exact_cumulative=end_cumulative, max_stride=max_stride)
 
             if not success:
                 print('Resetting all strides')
@@ -167,6 +187,7 @@ class StridePattern:
 
     @staticmethod
     def _get_max_stride(cumulative_stride, steps):
+        # ceil produces slightly better results but is substantially slower
         return int(2 * np.floor(cumulative_stride ** (1 / steps)))
 
     def _longest_unset_path(self):
@@ -206,19 +227,6 @@ class StridePattern:
             strides = self.strides[:]
             cumulatives = self.cumulatives[:]
 
-            # interoplate cumulative hints
-            cumulative_hints = [np.nan] * len(path)
-            for i in range(len(path)):
-                pop_ind = self.system.find_population_index(path[i])
-                if self.cumulatives[pop_ind]:
-                    cumulative_hints[i] = self.cumulatives[pop_ind]
-                elif self.cumulative_hints[pop_ind]:
-                    cumulative_hints[i] = self.cumulative_hints[pop_ind]
-
-            x = [i for i in range(len(path)) if ~np.isnan(cumulative_hints[i])]
-            y = [cumulative_hints[i] for i in range(len(path)) if ~np.isnan(cumulative_hints[i])]
-            cumulative_hints = np.interp(range(len(path)), x, y)
-
             failed = False
 
             for i in range(len(path) - 1):
@@ -229,17 +237,23 @@ class StridePattern:
                 if self.cumulatives[post_ind] and self.cumulatives[pre_ind]:
                     strides[projection_ind] = self.cumulatives[post_ind] / self.cumulatives[pre_ind]
                     if abs(strides[projection_ind] - round(strides[projection_ind])) > 1e-3:
+                        # this can happen e.g. if pre is 2 and post is 3 (have to start over then)
                         failed = True
+                        break
                 else:
-                    stride_hint = cumulative_hints[i+1] / cumulative_hints[i]
-                    strides[projection_ind] = self._sample_stride(stride_hint, min_stride, max_stride)
-                    # strides[projection_ind] = np.random.randint(min_stride, max_stride+1)
+                    max_for_this_stride = min(max_stride, int(self.max_cumulatives[post_ind]/cumulatives[pre_ind]))
+                    min_for_this_stride = max(min_stride, int(self.min_cumulatives[post_ind]/cumulatives[pre_ind]))
+
+                    if max_for_this_stride < min_for_this_stride:
+                        failed = True
+                        break
+
+                    strides[projection_ind] = self._sample_stride(min_for_this_stride, max_for_this_stride)
                     cumulatives[post_ind] = cumulatives[pre_ind] * strides[projection_ind]
 
-                    # print('setting {} <= {} <= {} for {}'.format(self.min_cumulatives[post_ind], cumulatives[post_ind], self.max_cumulatives[post_ind], system.populations[post_ind].name))
                     if cumulatives[post_ind] > self.max_cumulatives[post_ind] \
                             or cumulatives[post_ind] < self.min_cumulatives[post_ind]:
-                        # print('...nope')
+                        # this can happen due to rounding in min_for_this_stride
                         failed = True
                         break
 
@@ -257,15 +271,9 @@ class StridePattern:
 
         return done
 
-    def _sample_stride(self, stride_hint, min_stride, max_stride):
+    def _sample_stride(self, min_stride, max_stride, stride_hint=1.25):
         possible_strides = range(min_stride, max_stride + 1)
 
-        # if self.cumulative_hints[pre_ind] and self.cumulative_hints[post_ind]:
-        #     stride_hint = self.cumulative_hints[post_ind] / self.cumulative_hints[pre_ind]
-        # else:
-        #     stride_hint = 1.25
-
-        # print('stride_hint: {}'.format(stride_hint))
         relative_probabilities = [1/(.1+np.abs(stride-stride_hint))**2 for stride in possible_strides]
         probabilities = relative_probabilities / np.sum(relative_probabilities)
         result = np.random.choice(possible_strides, p=probabilities)
@@ -275,10 +283,10 @@ class StridePattern:
 
 def initialize_network(system, candidate, image_layer=0, image_channels=3.):
     """
-    :param system TODO
-    :param candidate TODO
-    :param image_layer TODO
-    :param image_channels TODO
+    :param system: system.System (biological network parameters)
+    :param candidate: a plausible StridePattern
+    :param image_layer: index of system layer that corresponds to input image
+    :param image_channels: number of channels in input image
     :return: A neural network architecture with the same nodes and connections as the given
         neurophysiological system architecture, the given stride pattern, with other
         hyperparameters initialized randomly.
@@ -311,7 +319,8 @@ def initialize_network(system, candidate, image_layer=0, image_channels=3.):
         c = .1 + .2*np.random.rand()
         sigma = .1 + .1*np.random.rand()
 
-        #TODO: this is reset in conversion
+        # in optimization this value is discarded and the value is calculated from
+        # RF widths, which are optimized
         w = 7
 
         net.connect(pre, post, c, stride, w, sigma)
@@ -337,13 +346,18 @@ if __name__ == '__main__':
     # print(path)
 
     candidate, distances, first_few = get_stride_pattern(system, best_of=1000)
-
     with open('stride-pattern.pkl', 'wb') as file:
         pickle.dump({'system': system, 'strides': candidate, 'distances': distances, 'first_few': first_few}, file)
 
+    # with open('stride-pattern.pkl', 'rb') as file:
+    #     result = pickle.load(file)
+    # import matplotlib.pyplot as plt
+    # plt.hist(result['distances'])
+    # plt.show()
 
     # print(candidate.strides)
     print(candidate.cumulatives)
+
     for i in range(len(system.populations)):
         print('{}: {} vs {}'.format(system.populations[i].name, candidate.cumulatives[i], candidate.cumulative_hints[i]))
     #
@@ -366,3 +380,4 @@ if __name__ == '__main__':
     #     print('{}->{}: {}'.format(projection.origin.name, projection.termination.name, candidate.strides[i]))
     #
     # print(candidate.longest_unset_path())
+
