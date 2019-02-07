@@ -44,7 +44,14 @@ class Data:
         :return: Estimated number of excitatory neurons in the given area/layer per hemisphere; we
             assume convolutional units are similar to excitatory neurons based on Parisien et al. (2008).
         """
-        return self.sd.neuron_numbers(area, layer)
+        if area == 'V1': # break down by sublayer according to Garcia-Marin et al.
+            fraction_of_v1 = GMKH17_density_per_mm2_V1[layer] / GMKH17_density_per_mm2_V1['1-6']
+            v1_total = 0
+            for l in ['2/3', '4', '5', '6']:
+                v1_total += self.sd.neuron_numbers(area, l)
+            return fraction_of_v1 * v1_total
+        else:
+            return self.sd.neuron_numbers(area, layer)
 
     def get_receptive_field_size(self, area):
         """
@@ -60,7 +67,7 @@ class Data:
         :param target_layer: Another cortical layer; target of same inter-laminar connection
         :return: Number of inputs in this connection per post-synaptic neuron
         """
-        spn = sd.interlaminar_synapses_per_neuron(area, source_layer, target_layer)
+        spn = self.sd.interlaminar_synapses_per_neuron(area, source_layer, target_layer)
         return spn / self.synapses_per_connection
 
     def get_extrinsic_inputs(self, area, target_layer):
@@ -72,7 +79,7 @@ class Data:
         if area == 'V1':
             return 8 # estimate from Garcia-Marin et al. (2017)
         else:
-            spn = sd.interarea_synapses_per_neuron(area, target_layer)
+            spn = self.sd.interarea_synapses_per_neuron(area, target_layer)
             return spn / self.synapses_per_connection
 
     def get_source_areas(self, target_area, feedforward_only=False):
