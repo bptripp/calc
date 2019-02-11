@@ -158,7 +158,7 @@ class NetworkVariables:
             sigma_post = tf.divide(self.w_rf[post_ind], pre_pixel_width)
             sigma_pre = tf.divide(self.w_rf[pre_ind], pre_pixel_width)
             sigma_kernel = tf.sqrt(sigma_post**2 - sigma_pre**2)
-            w = tf.constant(12**.5) * sigma_kernel
+            w = tf.constant(12**.5) * sigma_kernel  
             self.w.append(w)
 
             self.pres.append(pre_ind)
@@ -382,14 +382,22 @@ class Cost:
                         interlaminar_fractions.append(self.network.c[conn_ind])
 
                 if self.network.cortical_layer[i] == '2/3':
-                    # most neurons in L2/3 should project out of area AND to L5
+                    # most neurons in L2/3 should project to L5
+                    # about half should project into white matter (Callaway & Wiser, 1996, Visual Neuroscience)
                     if interarea_fractions:
-                        terms.append(tf.square(tf.reduce_sum(interarea_fractions)-1.0))
+                        terms.append(tf.square(tf.reduce_sum(interarea_fractions)-0.5))
                     terms.append(tf.square(tf.reduce_sum(interlaminar_fractions)-1.0))
                 elif self.network.cortical_layer[i] in ['4', '4Calpha', '4Cbeta']:
                     terms.append(tf.square(tf.reduce_sum(interlaminar_fractions)-1.0))
-                else:
-                    # most L5 and subcortical neurons should project out of area
+                elif self.network.cortical_layer[i] == '5':
+                    # a minority of L5 and L6 neurons project out, but the other ones aren't
+                    # included in the feedforward model
+                    if interarea_fractions:
+                        terms.append(tf.square(tf.reduce_sum(interarea_fractions)-1.0))
+                    terms.append(tf.square(tf.reduce_sum(interlaminar_fractions) - 1.0))
+                elif self.network.cortical_layer[i] == '6':
+                    # a minority of L5 and L6 neurons project out, but the other ones aren't
+                    # included in the feedforward model
                     if interarea_fractions:
                         terms.append(tf.square(tf.reduce_sum(interarea_fractions)-1.0))
 

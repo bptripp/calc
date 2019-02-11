@@ -13,7 +13,7 @@ def add_areas(system, cortical_areas):
     for area in cortical_areas:
         layers = data.get_layers(area)
         for layer in layers:
-            if layer != '1' and layer != '6':
+            if layer != '1':
                 name = _pop_name(area, layer)
 
                 n = _get_num_ff_neurons(area, layer)
@@ -57,27 +57,29 @@ def connect_areas_in_streams(system, cortical_areas):
 
                 if source == 'V1':
                     if is_ventral(target):
-                        supra_source_pop = 'V1_2/3'  # true for V4, not sure about others
-                        infra_source_pop = 'V1_5'
-                        system.connect_areas(supra_source_pop, target_pop, FLNe*SLN/100)
-                        system.connect_areas(infra_source_pop, target_pop, FLNe*(1-SLN/100))
+                        # V4 gets 2/3 input, not sure about others
+                        system.connect_areas('V1_2/3blob', target_pop, .333*FLNe*SLN/100)
+                        system.connect_areas('V1_2/3interblob', target_pop, .667*FLNe*SLN/100)
+                        system.connect_areas('V1_5', target_pop, FLNe*(1-SLN/100))
                     else:
-                        supra_source_pop = 'V1_4B'  # true for MT, not sure about others
-                        system.connect_areas(supra_source_pop, target_pop, FLNe*SLN/100)
+                        # true for MT, not sure about others
+                        system.connect_areas('V1_4B', target_pop, FLNe*SLN/100)
                 elif source == 'V2':
                     if is_ventral(target):
-                        supra_source_pop = 'V2thin_2/3'
-                        infra_source_pop = 'V2thin_5'
+                        system.connect_areas('V2thin_2/3', target_pop, .5*FLNe*SLN/100)
+                        system.connect_areas('V2thin_5', target_pop, .25*FLNe*(1-SLN/100))
+                        system.connect_areas('V2thin_6', target_pop, .25*FLNe*(1-SLN/100))
+                        system.connect_areas('V2pale_2/3', target_pop, .5*FLNe*SLN/100)
+                        system.connect_areas('V2pale_5', target_pop, .25*FLNe*(1-SLN/100))
+                        system.connect_areas('V2pale_6', target_pop, .25*FLNe*(1-SLN/100))
                     else:
-                        supra_source_pop = 'V2thick_2/3'
-                        infra_source_pop = 'V2thick_5'
-                    system.connect_areas(supra_source_pop, target_pop, FLNe * SLN / 100)
-                    system.connect_areas(infra_source_pop, target_pop, FLNe * (1 - SLN / 100))
+                        system.connect_areas('V2thick_2/3', target_pop, FLNe*SLN/100)
+                        system.connect_areas('V2thick_5', target_pop, .5*FLNe*(1-SLN/100))
+                        system.connect_areas('V2thick_6', target_pop, .5*FLNe*(1-SLN/100))
                 else:
-                    supra_source_pop = '{}_2/3'.format(source)
-                    infra_source_pop = '{}_5'.format(source)
-                    system.connect_areas(supra_source_pop, target_pop, FLNe*SLN/100)
-                    system.connect_areas(infra_source_pop, target_pop, FLNe*(1-SLN/100))
+                    system.connect_areas('{}_2/3'.format(source), target_pop, FLNe*SLN/100)
+                    system.connect_areas('{}_5'.format(source), target_pop, 0.5*FLNe*(1-SLN/100))
+                    system.connect_areas('{}_6'.format(source), target_pop, 0.5*FLNe*(1-SLN/100))
 
 
 def is_ventral(area):
@@ -125,16 +127,27 @@ def make_big_system(cortical_areas=None):
     # Pixels correspond roughly to retinal ganglion cells
     # Setting LGN RF sizes similar to input (one-pixel kernels)
     system.add('parvo_LGN', n_parvo_LGN, 5, 1.041*w_rf_0)
-    system.add('magno_LGN', n_magno_LGN, 5, 1.155*w_rf_0)
+    system.add('magno_LGN', n_magno_LGN, 5, 1.155*w_rf_0)  #TODO: is this right? See LH88
     system.add('konio_LGN', n_konio_LGN, 5, 1.155*w_rf_0)  #RF sizes highly scattered but not comparable to Magno (Xu et al., 2004, J Physiol)
     system.connect_areas(system.input_name, 'parvo_LGN', 1.)
     system.connect_areas(system.input_name, 'magno_LGN', 1.)
     system.connect_areas(system.input_name, 'konio_LGN', 1.)
 
-    for layer in ['4Calpha', '4Cbeta', '4B', '2/3', '5']:
-        n = _get_num_ff_neurons('V1', layer)
+    for layer in ['4Calpha', '4Cbeta', '4B', '2/3blob', '2/3interblob', '5', '6']:
+        if '2/3' in layer:
+            n = _get_num_ff_neurons('V1', '2/3')
+            if 'blob' in layer:
+                n = n / 3  # Sincich et al. (2010, J Neurosci)
+            elif 'interblob' in layer:
+                n = 2 * n / 3
+        else:
+            n = _get_num_ff_neurons('V1', layer)
+
         e = data.get_extrinsic_inputs('V1', '4') if layer[0] == '4' else None
-        if layer == '2/3':
+
+        if '2/3' in layer:
+            # TODO: Livingston & Hubel (1988) cite Livingston & Hubel (1984) re larger RF sizes in blobs
+            # than interblobs, but I can't find anything about this in the 1984 paper (or elsewhere).
             w = data.get_receptive_field_size('V1')
         elif layer == '4B':
             w = 1.1 * data.get_receptive_field_size('V1')  # TODO: get better estimate from Gilbert
@@ -144,7 +157,7 @@ def make_big_system(cortical_areas=None):
 
     system.connect_areas('parvo_LGN', 'V1_4Cbeta', 1.)
     system.connect_areas('magno_LGN', 'V1_4Calpha', 1.)
-    system.connect_areas('konio_LGN', 'V1_2/3', 1.) #TODO: also 4A, but not sure about output of 4A
+    system.connect_areas('konio_LGN', 'V1_2/3', 1.)
     system.connect_layers('V1_4Calpha', 'V1_4B', data.get_inputs_per_neuron('V1', '4', '2/3'))
     system.connect_layers('V1_4Cbeta', 'V1_2/3', .5*data.get_inputs_per_neuron('V1', '4', '2/3'))
 
@@ -152,16 +165,17 @@ def make_big_system(cortical_areas=None):
     system.connect_layers('V1_4Calpha', 'V1_2/3', .5*data.get_inputs_per_neuron('V1', '4', '2/3'))
     # system.connect_layers('V1_4B', 'V1_2/3', .25*data.get_inputs_per_neuron('V1', '4', '2/3'))
 
+    # Tootell et al. (1988) (IV)
     system.connect_layers('V1_2/3', 'V1_5', data.get_inputs_per_neuron('V1', '2/3', '5'))
     system.connect_layers('V1_4Cbeta', 'V1_5', data.get_inputs_per_neuron('V1', '4', '5'))
 
     #TODO: use cell counts for V1 directly
 
-    for area in ['V2thick', 'V2thin']:
-        for layer in ['2/3', '4', '5']:
+    for area in ['V2thick', 'V2thin', 'V2pale']:
+        for layer in ['2/3', '4', '5', '6']:
             name = _pop_name(area, layer)
 
-            n = _get_num_ff_neurons('V2', layer) / 2  # dividing V2 equally into thick and thin+inter stripes
+            n = _get_num_ff_neurons('V2', layer) / 3  # dividing V2 equally into thick, thin, inter stripes
             e = data.get_extrinsic_inputs('V2', '4') if layer == '4' else None
             w = data.get_receptive_field_size('V2') if layer == '2/3' else None
 
@@ -170,6 +184,8 @@ def make_big_system(cortical_areas=None):
         system.connect_layers(_pop_name(area, '4'), _pop_name(area, '2/3'), data.get_inputs_per_neuron('V2', '4', '2/3'))
         system.connect_layers(_pop_name(area, '2/3'), _pop_name(area, '5'), data.get_inputs_per_neuron('V2', '2/3', '5'))
         system.connect_layers(_pop_name(area, '4'), _pop_name(area, '5'), data.get_inputs_per_neuron('V2', '4', '5'))
+        system.connect_layers(_pop_name(area, '5'), _pop_name(area, '6'), data.get_inputs_per_neuron('V2', '5', '6'))
+        system.connect_layers(_pop_name(area, '2/3'), _pop_name(area, '6'), data.get_inputs_per_neuron('V2', '2/3', '6'))
 
     # There is substantial forward projection from V1_5 to V2 and V3, also from V2_5 to V3. We assume V1_5 is
     # parvo, and V2_5 is separated into stripes. Will omit parvo, V1_5, and V2thin_5 projections to dorsal areas,
@@ -178,9 +194,14 @@ def make_big_system(cortical_areas=None):
     # responses in the middle temporal visual area (MT) of the macaque monkey. Journal of Neuroscience, 10(10), 3323-3334.
     FLNe = data.get_FLNe('V1', 'V2')
     SLN = data.get_SLN('V1', 'V2')
-    system.connect_areas('V1_2/3', 'V2thin_4', FLNe * SLN / 100)
-    system.connect_areas('V1_5', 'V2thin_4', FLNe * (1 - SLN / 100))
+    system.connect_areas('V1_2/3blob', 'V2thin_4', FLNe * SLN / 100)
+    system.connect_areas('V1_2/3interblob', 'V2pale_4', FLNe * SLN / 100)
+    system.connect_areas('V1_5', 'V2thin_4', 0.5 * FLNe * (1 - SLN / 100))
     system.connect_areas('V1_4B', 'V2thick_4', FLNe * SLN / 100)
+
+    FLNe = data.get_FLNe('V1', 'MT')
+    SLN = data.get_SLN('V1', 'MT')
+    system.connect_areas('V1_6', 'MT_4', FLNe * (1 - SLN / 100))
 
     # Dorsal areas get connections from V1_4B and V2thick; ventral from V1_2/3, V1_5, and V2_thin
     # References on segregation in V2:
@@ -203,7 +224,7 @@ def make_big_system(cortical_areas=None):
     add_areas(system, [a for a in cortical_areas if a not in ('V1', 'V2')])
     connect_areas_in_streams(system, cortical_areas)
 
-    system.normalize_FLNe()
+    system.normalize_FLNe() 
     system.check_connected()
 
     return system
@@ -216,10 +237,24 @@ def _pop_name(area, layer):
 def _get_num_ff_neurons(area, layer):
     n = data.get_num_neurons(area, layer)
 
-    # layer 5 has many neurons that project down, to other hemisphere, and out
-    # fo the cortex; not sure about the fraction
+    # For L5 and L6, we only want to include cells that contribute to feedforward
+    # corticocortical connections, whereas for L2/3 and L4, although many pyramidal cells
+    # don't project out of the area, we include them as we assume they have feedforward
+    # projections to other layers.
+
     if layer == '5':
-        return n/2
+        # In Callaway & Wiser (1996), only 3 of 16 L5 cells project to white matter.
+        # Lur et al. (2016) show L5 projecting neurons can be corticocortical, corticotectal,
+        # or corticostriatal. They don't give fractions, but we will assume even split and
+        # only include corticocortical ones. (3/16)*(1/3) may still be an overestimate as some
+        # corticocortical connections are not feedforward.
+        return n/16
+    elif layer == '6':
+        # In L6 we include only group IIA pyramids. These are the only type II cells that enter
+        # white matter. Some type I cells enter white matter, but these project to thalamus
+        # (Briggs & Callaway, 2001; Briggs, 2010). Wiser & Callaway (1996) say 28% of L6 pyramids
+        # project to white matter, a bit less than half of these are short (thalamus-projecting).
+        return n*0.15
     else:
         return n
 
@@ -233,6 +268,8 @@ def _add_intrinsic_forward_connections(system, area):
         system.connect_layers(_pop_name(area, '4'), _pop_name(area, '2/3'), data.get_inputs_per_neuron(area, '4', '2/3'))
         system.connect_layers(_pop_name(area, '2/3'), _pop_name(area, '5'), data.get_inputs_per_neuron(area, '2/3', '5'))
         system.connect_layers(_pop_name(area, '4'), _pop_name(area, '5'), data.get_inputs_per_neuron(area, '4', '5'))
+        system.connect_layers(_pop_name(area, '2/3'), _pop_name(area, '6'), data.get_inputs_per_neuron(area, '2/3', '6'))
+        system.connect_layers(_pop_name(area, '5'), _pop_name(area, '6'), data.get_inputs_per_neuron(area, '5', '6'))
 
 
 def make_small_system(miniaturize=False):
