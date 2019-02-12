@@ -1,12 +1,9 @@
 import os
-# import sys
-# sys.path.append('/Users/bptripp/lib/multi-area-model/')
 import inspect
 import numpy as np
 import csv
 import json
 import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
 
 
 class Data:

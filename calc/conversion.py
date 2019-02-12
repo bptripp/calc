@@ -7,12 +7,15 @@ import numpy as np
 
 
 class SystemConstants:
+    """
+    TensorFlow constants for parameters of a System.
+    """
+
     def __init__(self, system):
         """
-        Creates arrays of TensorFlow constants for parameters of a System.
-
-        :param system:
+        :param system: physiological network model to approximate with convolutional network architecture
         """
+
         self.n = []
         self.e = []
         self.w = []
@@ -47,16 +50,16 @@ def get_variable(name, initial_value):
 
 
 class NetworkVariables:
+    """
+    TensorFlow variables for parameters of a Network.
+    """
+
     def __init__(self, network, system, image_layer, image_pixel_width):
         """
-        Creates arrays of TensorFlow variables for parameters of a Network.
-
-        :param network: TF variables will describe this Network
+        :param network: model of convnet architecure
         :param image_layer: index of the image layer (the input)
         :param image_pixel_width: width of an image pixel in degrees visual angle
         """
-        # self.network = network
-
         self.image_layer = image_layer
         self.image_pixel_width = image_pixel_width
 
@@ -403,56 +406,12 @@ class Cost:
 
         return tf.constant(kappa) * tf.reduce_mean(terms)
 
-    def dead_end_cost_debug(self, kappa):
-        """
-        :param kappa: weight relative to other costs
-        :return: cost due to under-use or over-use of feature maps in outgoing connections;
-            the premise is that most pyramidal neurons are projection neurons that have a
-            single cortico-cortical connection; we take this to mean that the sum of c over
-            outgoing connections should be about 1
-        """
-        terms = []
-        indices = []
-        n = []
-        for i in range(self.network.n_layers):
-            interlaminar_fractions = []
-            interarea_fractions = []
-            if self.network.output_connections[i]: # this cost only applies if layer has outputs
-                for conn_ind in self.network.output_connections[i]:
-                    if self.network.inter_area[conn_ind]:
-                        interarea_fractions.append(self.network.c[conn_ind])
-                    else:
-                        interlaminar_fractions.append(self.network.c[conn_ind])
-
-                # most neurons in L2/3 should project out of area AND to L5
-                print(self.network.cortical_layer[i])
-                if self.network.cortical_layer[i] == '2/3':
-                    if interarea_fractions:
-                        terms.append(norm_squared_error(1.0, tf.reduce_sum(interarea_fractions)))
-                        indices.append(i)
-                        n.append(len(interarea_fractions))
-                    terms.append(norm_squared_error(1.0, tf.reduce_sum(interlaminar_fractions)))
-                    indices.append(i)
-                    n.append(len(interlaminar_fractions))
-                elif self.network.cortical_layer[i] in ['4', '4Calpha', '4Cbeta']:
-                    terms.append(norm_squared_error(1.0, tf.reduce_sum(interlaminar_fractions)))
-                    indices.append(i)
-                    n.append(len(interlaminar_fractions))
-                else:
-                    # most L5 and subcortical neurons should project out of area
-                    if interarea_fractions:
-                        terms.append(norm_squared_error(1.0, tf.reduce_sum(interarea_fractions)))
-                        indices.append(i)
-                        n.append(len(interarea_fractions))
-
-        return tf.reduce_mean(terms), indices, n
-
     def w_k_constraint_cost(self, kappa):
         """
         :param kappa: weight relative to other costs
         :return: Cost for soft constraint w_k >= 1
         """
-        return kappa * bounds(self.network.w, min=1.)
+        return kappa * bounds(self.network.w, min_bound=1.)
 
     def compare_system(self, system, sess):
         """
@@ -473,21 +432,19 @@ class Cost:
             projection = system.projections[ij]
             if isinstance(projection, InterAreaProjection):
                 f = sess.run(self._get_f_network(ij))
-                # print('{}->{} f:[{}|{:10.6f}]'.format(projection.origin.name, projection.termination.name, projection.f, f))
                 print('0, {}, {:10.6f};'.format(projection.f, f))
             elif isinstance(projection, InterLaminarProjection):
                 b = sess.run(self._get_b_network(ij))
-                # print('{}->{} b:[{}|{:10.6f}]'.format(projection.origin.name, projection.termination.name, projection.b, b))
                 print('1, {}, {:10.6f};'.format(projection.b, b))
 
 
-def bounds(var_list, min=None, max=None):
+def bounds(var_list, min_bound=None, max_bound=None):
     terms = []
     for i in range(len(var_list)):
-        if min is not None:
-            terms.append(constraint_gt(var_list[i], min))
-        if max is not None:
-            terms.append(constraint_lt(var_list[i], max))
+        if min_bound is not None:
+            terms.append(constraint_gt(var_list[i], min_bound))
+        if max_bound is not None:
+            terms.append(constraint_lt(var_list[i], max_bound))
     return tf.reduce_sum(terms)
 
 
@@ -509,6 +466,7 @@ def constraint_lt(var, val):
     return tf.maximum(var - tf.constant(val), tf.constant(0.))
 
 
+#TODO: this is only used in a test; remove test or move to test file
 def make_net_from_system(system, image_layer=0, image_channels=3.):
     """
     :return: A neural network architecture with the same nodes and connections as the given
@@ -575,9 +533,9 @@ def update_net_from_tf(sess, net, nv):
         net.connections[i].sigma = sigma[i]
 
 
-def print_gradients(cost, vars):
-    gradients = tf.gradients(cost, vars)
-    for i in range(len(vars)):
-        if gradients[i] is not None:
-            print('grad wrt {}: {}'.format(vars[i].name, sess.run(gradients[i])))
+# def print_gradients(cost, vars):
+#     gradients = tf.gradients(cost, vars)
+#     for i in range(len(vars)):
+#         if gradients[i] is not None:
+#             print('grad wrt {}: {}'.format(vars[i].name, sess.run(gradients[i])))
 

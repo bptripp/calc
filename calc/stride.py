@@ -44,14 +44,13 @@ def get_stride_pattern(system, max_cumulative_stride=512, best_of=10):
     for i in range(best_of):
         print('Making stride pattern {} of {}'.format(i, best_of))
         candidate = StridePattern(system, max_cumulative_stride)
-        # candidate.set_hints()
         candidate.fill()
         distance = candidate.distance_from_hints()
         distances.append(distance)
         if distance < best_distance:
             best_distance = distance
             best_pattern = candidate
-        if i < 6:
+        if i < 5:
             first_few.append(candidate)
 
     return best_pattern, distances, first_few

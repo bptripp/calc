@@ -2,21 +2,24 @@ import pickle
 import numpy as np
 import tensorflow as tf
 from calc.stride import StridePattern, initialize_network
-from calc.conversion import get_clip_ops, update_net_from_tf, make_net_from_system, Cost
-
-"""
-Optimization strategies.
-"""
+from calc.conversion import get_clip_ops, update_net_from_tf, Cost
 
 
-def test_stride_patterns(system, n=5):
+def compare_stride_patterns(system, n=5):
+    """
+    Creates and optimizes networks with several random stride patterns, to
+    explore sensitivity of optimization to stride pattern.
+
+    :param system: a System (physiological model) for which to create a convnet
+    :param n: number of stride patterns / networks to generate
+    """
     import matplotlib.pyplot as plt
 
     nets = [None] * n
     training_curves = [None] * n
     for i in range(n):
         tf.reset_default_graph()
-        nets[i], training_curves[i] = test_stride_pattern(system)
+        nets[i], training_curves[i] = optimize_network_architecture(system)
         tc = np.array(training_curves[i])
         print(tc.shape)
         plt.semilogy(tc[:,0], tc[:,1])
@@ -25,39 +28,31 @@ def test_stride_patterns(system, n=5):
         'training_curves': training_curves,
         'nets': nets
     }
-    with open('calc-training.pickle', 'wb') as f:
+    with open('nets-and-training-curves.pkl', 'wb') as f:
         pickle.dump(data, f)
 
     plt.show()
 
 
-def test_stride_pattern(system, candidate=None, compare=True):
-    if not candidate:
-        candidate = StridePattern(system, 32)
-        candidate.fill()
+def optimize_network_architecture(system, stride_pattern=None, compare=True):
+    """
+    :param system: a System (physiological model) to fit network architecture to
+    :param stride_pattern: strides for each connection (generated at random if not given
+    :param compare: print comparison of optimized values with target values
+    :return: optimized network, training curve
+    """
 
-    net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
+    if not stride_pattern:
+        stride_pattern = StridePattern(system, 32)
+        stride_pattern.fill()
+
+    net = initialize_network(system, stride_pattern, image_layer=0, image_channels=3.)
 
     optimizer = tf.train.AdamOptimizer(learning_rate=.00001)
     print('Setting up cost structure')
     cost = Cost(system, net)
 
     print('Defining cost function')
-
-    # ######################
-    # # foo, indices, n = cost.dead_end_cost_debug(1.)
-    # foo = cost.dead_end_cost(1.)
-    # init = tf.global_variables_initializer()
-    # with tf.Session() as sess:
-    #     print('Initializing')
-    #     sess.run(init)
-    #     print(sess.run(foo))
-    # # print(n)
-    # # print(indices)
-    # print([pop.name for pop in system.populations])
-    # assert False
-    # ######################
-
 
     # pc = cost.param_cost(1e-13)
     fc = cost.match_cost_f(1.)
@@ -98,7 +93,7 @@ def test_stride_pattern(system, candidate=None, compare=True):
 
         iterations = 100
         for i in range(1001):
-            optimize_net(sess, opt_op, iterations=iterations, clip_ops=clip_ops)
+            _run_optimization_steps(sess, opt_op, iterations=iterations, clip_ops=clip_ops)
             cost_i = sess.run(c)
             training_curve.append((iterations*i, cost_i, sess.run(dec), sess.run(kc)))
             print(cost_i)
@@ -122,19 +117,12 @@ def test_stride_pattern(system, candidate=None, compare=True):
     return net, training_curve
 
 
-def optimize_net(sess, opt_op, iterations=100, clip_ops=[]):
-    # gradients = tf.gradients(c, vars)
+def _run_optimization_steps(sess, opt_op, iterations=100, clip_ops=[]):
     for i in range(iterations):
-        # for i in range(len(vars)):
-        #     if gradients[i] is not None:
-        #         print('grad wrt {}: {}'.format(vars[i].name, sess.run(gradients[i])))
         print('.', end='', flush=True)
-
         opt_op.run()
-
         for clip_op in clip_ops:
             sess.run(clip_op)
-
     print()
 
 

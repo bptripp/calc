@@ -3,7 +3,7 @@
 from calc.system import System
 from calc.stride import StridePattern
 from calc.data import Data
-from calc.optimization import test_stride_pattern
+from calc.optimization import optimize_network_architecture
 
 
 data = Data()
@@ -224,7 +224,7 @@ def make_big_system(cortical_areas=None):
     add_areas(system, [a for a in cortical_areas if a not in ('V1', 'V2')])
     connect_areas_in_streams(system, cortical_areas)
 
-    system.normalize_FLNe() 
+    system.normalize_FLNe()
     system.check_connected()
 
     return system
@@ -329,7 +329,7 @@ if __name__ == '__main__':
     with open('stride-pattern-ventral.pkl', 'rb') as file:
         data = pickle.load(file)
 
-    net, training_curve = test_stride_pattern(data['system'], data['strides'])
+    net, training_curve = optimize_network_architecture(data['system'], data['strides'])
     # net, training_curve = test_stride_pattern(data['system'], data['first_few'][3], False)
 
     with open('optimization-result.pkl', 'wb') as file:
