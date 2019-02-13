@@ -157,19 +157,24 @@ def make_big_system(cortical_areas=None):
 
     system.connect_areas('parvo_LGN', 'V1_4Cbeta', 1.)
     system.connect_areas('magno_LGN', 'V1_4Calpha', 1.)
-    system.connect_areas('konio_LGN', 'V1_2/3', 1.)
+    system.connect_areas('konio_LGN', 'V1_2/3blob', 1.)
+    system.connect_areas('konio_LGN', 'V1_2/3interblob', 1.)
     system.connect_layers('V1_4Calpha', 'V1_4B', data.get_inputs_per_neuron('V1', '4', '2/3'))
-    system.connect_layers('V1_4Cbeta', 'V1_2/3', .5*data.get_inputs_per_neuron('V1', '4', '2/3'))
+    system.connect_layers('V1_4Cbeta', 'V1_2/3blob', .5*data.get_inputs_per_neuron('V1', '4', '2/3'))
+    system.connect_layers('V1_4Cbeta', 'V1_2/3interblob', data.get_inputs_per_neuron('V1', '4', '2/3'))
 
     # feedforward magno input to ventral areas (see Merigan & Maunsell, 1983, pg 386)
-    system.connect_layers('V1_4Calpha', 'V1_2/3', .5*data.get_inputs_per_neuron('V1', '4', '2/3'))
+    system.connect_layers('V1_4Calpha', 'V1_2/3blob', .5*data.get_inputs_per_neuron('V1', '4', '2/3'))
     # system.connect_layers('V1_4B', 'V1_2/3', .25*data.get_inputs_per_neuron('V1', '4', '2/3'))
 
     # Tootell et al. (1988) (IV)
-    system.connect_layers('V1_2/3', 'V1_5', data.get_inputs_per_neuron('V1', '2/3', '5'))
+    system.connect_layers('V1_2/3blob', 'V1_5', .5*data.get_inputs_per_neuron('V1', '2/3', '5'))
+    system.connect_layers('V1_2/3interblob', 'V1_5', .5*data.get_inputs_per_neuron('V1', '2/3', '5'))
     system.connect_layers('V1_4Cbeta', 'V1_5', data.get_inputs_per_neuron('V1', '4', '5'))
 
-    #TODO: use cell counts for V1 directly
+    system.connect_layers('V1_2/3blob', 'V1_6', data.get_inputs_per_neuron('V1', '2/3', '6'))
+    system.connect_layers('V1_4Calpha', 'V1_6', data.get_inputs_per_neuron('V1', '4', '6'))
+    system.connect_layers('V1_5', 'V1_6', data.get_inputs_per_neuron('V1', '5', '6'))
 
     for area in ['V2thick', 'V2thin', 'V2pale']:
         for layer in ['2/3', '4', '5', '6']:
@@ -194,14 +199,15 @@ def make_big_system(cortical_areas=None):
     # responses in the middle temporal visual area (MT) of the macaque monkey. Journal of Neuroscience, 10(10), 3323-3334.
     FLNe = data.get_FLNe('V1', 'V2')
     SLN = data.get_SLN('V1', 'V2')
-    system.connect_areas('V1_2/3blob', 'V2thin_4', FLNe * SLN / 100)
-    system.connect_areas('V1_2/3interblob', 'V2pale_4', FLNe * SLN / 100)
-    system.connect_areas('V1_5', 'V2thin_4', 0.5 * FLNe * (1 - SLN / 100))
+    system.connect_areas('V1_2/3blob', 'V2thin_4', .5 * FLNe * SLN / 100)
+    system.connect_areas('V1_2/3interblob', 'V2pale_4', .5 * FLNe * SLN / 100)
+    system.connect_areas('V1_5', 'V2thin_4', FLNe * (1 - SLN / 100))
     system.connect_areas('V1_4B', 'V2thick_4', FLNe * SLN / 100)
 
-    FLNe = data.get_FLNe('V1', 'MT')
-    SLN = data.get_SLN('V1', 'MT')
-    system.connect_areas('V1_6', 'MT_4', FLNe * (1 - SLN / 100))
+    if system.find_population_index('MT_4'):
+        FLNe = data.get_FLNe('V1', 'MT')
+        SLN = data.get_SLN('V1', 'MT')
+        system.connect_areas('V1_6', 'MT_4', FLNe * (1 - SLN / 100))
 
     # Dorsal areas get connections from V1_4B and V2thick; ventral from V1_2/3, V1_5, and V2_thin
     # References on segregation in V2:
@@ -272,49 +278,55 @@ def _add_intrinsic_forward_connections(system, area):
         system.connect_layers(_pop_name(area, '5'), _pop_name(area, '6'), data.get_inputs_per_neuron(area, '5', '6'))
 
 
-def make_small_system(miniaturize=False):
-    #TODO: add V2 stripe distinctions (extract methods for parvo and magno early vision?)
-    cortical_areas = ['V1', 'V2', 'V4', 'VOT', 'PITv', 'PITd', 'CITv', 'CITd', 'AITv', 'AITd', 'TH']
+def miniaturize(system, factor=10):
+    for population in system.populations:
+        if population.name != system.input_name:
+            population.n = population.n / factor
 
-    system = System()
-    system.add_input(750000, .2)
 
-    area = 'V1'
-    for layer in ['2/3', '4Cbeta', '5']:
-        name = _pop_name(area, layer)
-
-        n = _get_num_ff_neurons(area, layer)
-        e = data.get_extrinsic_inputs(area, '4') if layer == '4Cbeta' else None
-        w = data.get_receptive_field_size(area) if layer == '2/3' else None
-
-        system.add(name, n, e, w)
-
-    system.connect_areas(system.input_name, 'V1_4Cbeta', 1.)
-    system.connect_layers(_pop_name(area, '4Cbeta'), _pop_name(area, '2/3'), data.get_inputs_per_neuron(area, '4', '2/3'))
-    system.connect_layers(_pop_name(area, '2/3'), _pop_name(area, '5'), data.get_inputs_per_neuron(area, '2/3', '5'))
-    system.connect_layers(_pop_name(area, '4Cbeta'), _pop_name(area, '5'), data.get_inputs_per_neuron(area, '4', '5'))
-
-    add_areas(system, [area for area in cortical_areas if area != 'V1'])
-    connect_areas(system, cortical_areas)
-
-    system.normalize_FLNe()
-    system.check_connected()
-
-    # graph = system.make_graph()
-    # import networkx as nx
-    # import matplotlib.pyplot as plt
-    # from calc.system import get_layout
-    # nx.draw_networkx(graph, pos=get_layout(system), arrows=True, font_size=10, node_size=1200, node_color='white')
-    # plt.show()
-
-    if miniaturize:
-        for population in system.populations:
-            if population.name != system.input_name:
-                population.n = population.n / 20
-
-    system.normalize_FLNe()
-    system.check_connected()
-    return system
+# def make_small_system(miniaturize=False):
+#     #TODO: add V2 stripe distinctions (extract methods for parvo and magno early vision?)
+#     cortical_areas = ['V1', 'V2', 'V4', 'VOT', 'PITv', 'PITd', 'CITv', 'CITd', 'AITv', 'AITd', 'TH']
+#
+#     system = System()
+#     system.add_input(750000, .2)
+#
+#     area = 'V1'
+#     for layer in ['2/3', '4Cbeta', '5']:
+#         name = _pop_name(area, layer)
+#
+#         n = _get_num_ff_neurons(area, layer)
+#         e = data.get_extrinsic_inputs(area, '4') if layer == '4Cbeta' else None
+#         w = data.get_receptive_field_size(area) if layer == '2/3' else None
+#
+#         system.add(name, n, e, w)
+#
+#     system.connect_areas(system.input_name, 'V1_4Cbeta', 1.)
+#     system.connect_layers(_pop_name(area, '4Cbeta'), _pop_name(area, '2/3'), data.get_inputs_per_neuron(area, '4', '2/3'))
+#     system.connect_layers(_pop_name(area, '2/3'), _pop_name(area, '5'), data.get_inputs_per_neuron(area, '2/3', '5'))
+#     system.connect_layers(_pop_name(area, '4Cbeta'), _pop_name(area, '5'), data.get_inputs_per_neuron(area, '4', '5'))
+#
+#     add_areas(system, [area for area in cortical_areas if area != 'V1'])
+#     connect_areas(system, cortical_areas)
+#
+#     system.normalize_FLNe()
+#     system.check_connected()
+#
+#     # graph = system.make_graph()
+#     # import networkx as nx
+#     # import matplotlib.pyplot as plt
+#     # from calc.system import get_layout
+#     # nx.draw_networkx(graph, pos=get_layout(system), arrows=True, font_size=10, node_size=1200, node_color='white')
+#     # plt.show()
+#
+#     if miniaturize:
+#         for population in system.populations:
+#             if population.name != system.input_name:
+#                 population.n = population.n / 20
+#
+#     system.normalize_FLNe()
+#     system.check_connected()
+#     return system
 
 
 if __name__ == '__main__':

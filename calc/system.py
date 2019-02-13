@@ -217,12 +217,14 @@ class System:
         for projection in self.projections:
             print(projection.get_description())
 
-    def check_connected(self):
+    def check_connected(self, input_indices=[0]):
         """
-        Checks that all populations in the system, except for the INPUT population, have at least one input.
+        Checks that all populations in the system, except for identified input populations, have at least one input.
         """
-        for pop in self.populations:
-            if not pop.is_input():
+        for i in range(len(self.populations)):
+            pop = self.populations[i]
+            # print('{}: {}'.format(pop.name, [pre.name for pre in self.find_pre(pop.name)]))
+            if i not in input_indices:
                 assert self.find_pre(pop.name), '{} has no inputs'.format(pop.name)
 
 
