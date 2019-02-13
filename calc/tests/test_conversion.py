@@ -59,7 +59,7 @@ def calculate_sigma_star(net, ind, w_ij, s_ij):
 
     # print('stride: {} beta: {}'.format(s_ij, beta_ij))
 
-    return 1. - (1. - sigma_ij)**(beta_ij * c_ij * m_i)
+    return 1. - (1. - sigma_ij)**(beta_ij * m_i)
 
 
 def calculate_n_ij(net, ind, s_ij, w_ij):
@@ -112,7 +112,6 @@ class TestNetworkVariables(unittest.TestCase):
 
             # these aren't taken directly from the network object but are derived
             self.assertNotAlmostEqual(sess.run(nv.w[0]), net.connections[0].w)
-            self.assertNotAlmostEqual(sess.run(nv.s[0]), net.connections[0].s)
 
 
 class TestCost(unittest.TestCase):
@@ -209,7 +208,6 @@ class TestCost(unittest.TestCase):
                 tf_s = sess.run(cost.network.s[conn_ind])
                 net_sigma_star = calculate_sigma_star(net, conn_ind, tf_w, tf_s)
                 # print('sigma_star net: {} tf: {}'.format(net_sigma_star, sess.run(tf_sigma_star)))
-
                 self.assertAlmostEqual(net_sigma_star, sess.run(tf_sigma_star), 3)
 
     def test_match_cost_f(self):
