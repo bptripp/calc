@@ -44,7 +44,7 @@ def connect_areas_in_streams(system, cortical_areas):
     Dorsal / ventral aware version. Include V1 and V2 in cortical_areas, but they must be
     connected to each other separately.
     """
-    for target in [a for a in cortical_areas if a not in ('V1', 'V2')]:
+    for target in [a for a in cortical_areas if a not in ('V1', 'V2thin', 'V2thick', 'V2pale')]:
         for source in data.get_source_areas(target, feedforward_only=True):
             # print(source)
             if source in cortical_areas:
@@ -66,12 +66,14 @@ def connect_areas_in_streams(system, cortical_areas):
                         system.connect_areas('V1_4B', target_pop, FLNe*SLN/100)
                 elif source == 'V2':
                     if is_ventral(target):
-                        system.connect_areas('V2thin_2/3', target_pop, .5*FLNe*SLN/100)
-                        system.connect_areas('V2thin_5', target_pop, .25*FLNe*(1-SLN/100))
-                        system.connect_areas('V2thin_6', target_pop, .25*FLNe*(1-SLN/100))
-                        system.connect_areas('V2pale_2/3', target_pop, .5*FLNe*SLN/100)
-                        system.connect_areas('V2pale_5', target_pop, .25*FLNe*(1-SLN/100))
-                        system.connect_areas('V2pale_6', target_pop, .25*FLNe*(1-SLN/100))
+                        thin_fraction = .333
+                        pale_fraction = .667
+                        system.connect_areas('V2thin_2/3', target_pop, thin_fraction*FLNe*SLN/100)
+                        system.connect_areas('V2thin_5', target_pop, .5*thin_fraction*FLNe*(1-SLN/100))
+                        system.connect_areas('V2thin_6', target_pop, .5*thin_fraction*FLNe*(1-SLN/100))
+                        system.connect_areas('V2pale_2/3', target_pop, pale_fraction*FLNe*SLN/100)
+                        system.connect_areas('V2pale_5', target_pop, .5*pale_fraction*FLNe*(1-SLN/100))
+                        system.connect_areas('V2pale_6', target_pop, .5*pale_fraction*FLNe*(1-SLN/100))
                     else:
                         system.connect_areas('V2thick_2/3', target_pop, FLNe*SLN/100)
                         system.connect_areas('V2thick_5', target_pop, .5*FLNe*(1-SLN/100))
@@ -127,12 +129,13 @@ def make_big_system(cortical_areas=None):
     # Pixels correspond roughly to retinal ganglion cells
     # Setting LGN RF sizes similar to input (one-pixel kernels)
     system.add('parvo_LGN', n_parvo_LGN, 5, 1.041*w_rf_0)
-    system.add('magno_LGN', n_magno_LGN, 5, 1.155*w_rf_0)  #TODO: is this right? See LH88
-    system.add('konio_LGN', n_konio_LGN, 5, 1.155*w_rf_0)  #RF sizes highly scattered but not comparable to Magno (Xu et al., 2004, J Physiol)
+    system.add('magno_LGN', n_magno_LGN, 5, 1.155*w_rf_0)  #TODO reconsider; see Livingston & Hubel (1988)
+    system.add('konio_LGN', n_konio_LGN, 5, 1.155*w_rf_0)  #RF sizes highly scattered but comparable to Magno (Xu et al., 2004, J Physiol)
     system.connect_areas(system.input_name, 'parvo_LGN', 1.)
     system.connect_areas(system.input_name, 'magno_LGN', 1.)
     system.connect_areas(system.input_name, 'konio_LGN', 1.)
 
+    # L4A is omitted in classical models, so we leave it out, but see (Sincich et al. 2010)
     for layer in ['4Calpha', '4Cbeta', '4B', '2/3blob', '2/3interblob', '5', '6']:
         if '2/3' in layer:
             n = _get_num_ff_neurons('V1', '2/3')
@@ -146,7 +149,7 @@ def make_big_system(cortical_areas=None):
         e = data.get_extrinsic_inputs('V1', '4') if layer[0] == '4' else None
 
         if '2/3' in layer:
-            # TODO: Livingston & Hubel (1988) cite Livingston & Hubel (1984) re larger RF sizes in blobs
+            # Livingston & Hubel (1988) cite Livingston & Hubel (1984) re larger RF sizes in blobs
             # than interblobs, but I can't find anything about this in the 1984 paper (or elsewhere).
             w = data.get_receptive_field_size('V1')
         elif layer == '4B':
@@ -165,7 +168,6 @@ def make_big_system(cortical_areas=None):
 
     # feedforward magno input to ventral areas (see Merigan & Maunsell, 1983, pg 386)
     system.connect_layers('V1_4Calpha', 'V1_2/3blob', .5*data.get_inputs_per_neuron('V1', '4', '2/3'))
-    # system.connect_layers('V1_4B', 'V1_2/3', .25*data.get_inputs_per_neuron('V1', '4', '2/3'))
 
     # Tootell et al. (1988) (IV)
     system.connect_layers('V1_2/3blob', 'V1_5', .5*data.get_inputs_per_neuron('V1', '2/3', '5'))
@@ -180,7 +182,9 @@ def make_big_system(cortical_areas=None):
         for layer in ['2/3', '4', '5', '6']:
             name = _pop_name(area, layer)
 
-            n = _get_num_ff_neurons('V2', layer) / 3  # dividing V2 equally into thick, thin, inter stripes
+            n = _get_num_ff_neurons('V2', layer)
+            n = n/5 if 'thin' in area else 2*n/5
+
             e = data.get_extrinsic_inputs('V2', '4') if layer == '4' else None
             w = data.get_receptive_field_size('V2') if layer == '2/3' else None
 
@@ -199,8 +203,8 @@ def make_big_system(cortical_areas=None):
     # responses in the middle temporal visual area (MT) of the macaque monkey. Journal of Neuroscience, 10(10), 3323-3334.
     FLNe = data.get_FLNe('V1', 'V2')
     SLN = data.get_SLN('V1', 'V2')
-    system.connect_areas('V1_2/3blob', 'V2thin_4', .5 * FLNe * SLN / 100)
-    system.connect_areas('V1_2/3interblob', 'V2pale_4', .5 * FLNe * SLN / 100)
+    system.connect_areas('V1_2/3blob', 'V2thin_4', FLNe * SLN / 100)
+    system.connect_areas('V1_2/3interblob', 'V2pale_4', FLNe * SLN / 100)
     system.connect_areas('V1_5', 'V2thin_4', FLNe * (1 - SLN / 100))
     system.connect_areas('V1_4B', 'V2thick_4', FLNe * SLN / 100)
 
@@ -224,10 +228,7 @@ def make_big_system(cortical_areas=None):
         cortical_areas = data.get_areas()[:]
         cortical_areas.remove('MDP') # MDP has no inputs in CoCoMac
 
-    # cortical_areas = ['V1', 'V2', 'VP', 'V3', 'V3A', 'MT', 'V4t', 'V4', 'MSTd', 'DP',
-    #               'VIP', 'PITv', 'PITd', 'MSTl', 'CITv', 'CITd', 'AITv', 'FST', '7a', 'AITd']
-
-    add_areas(system, [a for a in cortical_areas if a not in ('V1', 'V2')])
+    add_areas(system, [a for a in cortical_areas if a not in ('V1', 'V2thin', 'V2thick', 'V2pale')])
     connect_areas_in_streams(system, cortical_areas)
 
     system.normalize_FLNe()
@@ -330,6 +331,9 @@ def miniaturize(system, factor=10):
 
 
 if __name__ == '__main__':
+    # cortical_areas = ['V1', 'V2', 'VP', 'V3', 'V3A', 'MT', 'V4t', 'V4', 'MSTd', 'DP',
+    #               'VIP', 'PITv', 'PITd', 'MSTl', 'CITv', 'CITd', 'AITv', 'FST', '7a', 'AITd']
+
     # system = make_small_system(miniaturize=True)
     # system = make_big_system()
     # system.print_description()
