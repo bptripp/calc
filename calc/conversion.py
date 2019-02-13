@@ -56,7 +56,7 @@ class NetworkVariables:
 
     def __init__(self, network, system, image_layer, image_pixel_width):
         """
-        :param network: model of convnet architecure
+        :param network: model of convnet architecture
         :param image_layer: index of the image layer (the input)
         :param image_pixel_width: width of an image pixel in degrees visual angle
         """
@@ -66,18 +66,17 @@ class NetworkVariables:
         self.n_layers = len(network.layers)
         self.n_connections = len(network.connections)
 
-        # hyperparameters wrapped as TF variables ...
-        self.m = [] # number of feature maps in each layer
-        self.width = [] # width of feature maps each layer
-
+        # hyperparameters wrapped as TF variables
         self.c = [] # fraction of feature maps in pre layer that contribute to each connection
         self.sigma = [] # pixel-wise sparsity of each connection
 
-        # an additional variable from which some connection hyperparams are derived ...
+        # an additional variable from which some connection hyperparams are derived
         self.w_rf = [] # RF width of each layer in degrees visual angle
 
-        # set separately (not suitable for gradient descent)
+        # set separately (integer parameters not suitable for gradient descent)
         self.s = [] # stride of each connection
+        self.m = [] # number of feature maps in each layer
+        self.width = [] # width of feature maps each layer
 
         # derived from w_rf and other hyperparams
         self.w = [] # kernel widths
@@ -89,7 +88,7 @@ class NetworkVariables:
         self.pres = [] # for each connection, index of presynaptic layer
         self.posts = [] # for each connection, index of postsynaptic layer
         self.inter_area = [] # for each connection, True for InterAreaProjections
-        self.cortical_layer = [] # for each layer, cortical layer name or None
+        self.cortical_layer = [] # for each layer, cortical layer name or None (used for dead-end cost)
 
         for layer in network.layers:
             self.m.append(tf.constant(layer.m, dtype=tf.float32))
@@ -112,36 +111,9 @@ class NetworkVariables:
             cortical_layer = None
             if '_' in layer.name:
                 cortical_layer = layer.name.split('_')[1]
-                if cortical_layer not in ['2/3', '4', '4B', '4Calpha', '4Cbeta', '5']:
-                    cortical_layer = None
-
             self.cortical_layer.append(cortical_layer)
 
-        def get_min_downstream_w_rf(w_rf, width):
-            sigma = w_rf / image_pixel_width * width / network.layers[image_layer].width
-            sigma_downstream = np.sqrt(sigma**2 + 1/12)
-            return w_rf * sigma_downstream / sigma
-
-        # initialize unknown RF sizes as small as possible
-        w_rf_init = [pop.w for pop in system.populations]
-        done = False
-        while not done:
-            done = True
-            for i in range(len(w_rf_init)):
-                if w_rf_init[i] is None:
-                    min_downstream_rfs = []
-                    for input_layer in self.input_layers[i]:
-                        w_rf_input = w_rf_init[input_layer]
-                        width_input = network.layers[input_layer].width
-                        if w_rf_input is None:
-                            break
-                        else:
-                            min_downstream_rfs.append(get_min_downstream_w_rf(w_rf_input, width_input))
-                    if len(min_downstream_rfs) == len(self.input_layers[i]):
-                        w_rf_init[i] = np.max(min_downstream_rfs)
-                    else:
-                        done = False
-
+        w_rf_init = self._min_w_rfs(system, network)
         for i in range(len(w_rf_init)):
             self.w_rf.append(get_variable('{}-w_rf_s'.format(network.layers[i].name), w_rf_init[i]))
 
@@ -157,6 +129,7 @@ class NetworkVariables:
             self.s.append(tf.constant(connection.s, dtype=tf.float32))
 
             pre_pixel_width = image_pixel_width * self.width[image_layer] / self.width[pre_ind]
+
             # convert RF sizes from degrees visual angle to *pre-layer* pixels (units of the kernel)...
             sigma_post = tf.divide(self.w_rf[post_ind], pre_pixel_width)
             sigma_pre = tf.divide(self.w_rf[pre_ind], pre_pixel_width)
@@ -170,13 +143,36 @@ class NetworkVariables:
         for projection in system.projections:
             self.inter_area.append(isinstance(projection, InterAreaProjection))
 
+    def _min_w_rfs(self, system, network):
+        w_rf_init = [pop.w for pop in system.populations]
+        done = False
+        while not done:
+            done = True
+            for i in range(len(w_rf_init)):
+                if w_rf_init[i] is None:
+                    min_downstream_rfs = []
+                    for input_layer in self.input_layers[i]: # layers that provide direct input to this one
+                        w_rf_input = w_rf_init[input_layer]
+                        width_input = network.layers[input_layer].width
+                        if w_rf_input is None:
+                            break
+                        else:
+                            min_downstream_rfs.append(
+                                self._get_min_downstream_w_rf(w_rf_input,
+                                                              width_input,
+                                                              network.layers[self.image_layer].width)
+                            )
+                    if len(min_downstream_rfs) == len(self.input_layers[i]):
+                        w_rf_init[i] = np.max(min_downstream_rfs)
+                    else:
+                        done = False
 
-    def collect_variables(self):
-        vars = []
-        vars.extend(self.c)
-        vars.extend(self.w_rf)
-        vars.extend(self.sigma)
-        return vars
+        return w_rf_init
+
+    def _get_min_downstream_w_rf(self, w_rf, layer_width, image_layer_width):
+        sigma = w_rf / self.image_pixel_width * layer_width / image_layer_width
+        sigma_downstream = np.sqrt(sigma**2 + 1/12)
+        return w_rf * sigma_downstream / sigma
 
 
 def get_clip_ops(vars, min=1e-4, max=1.):
@@ -384,23 +380,29 @@ class Cost:
                     else:
                         interlaminar_fractions.append(self.network.c[conn_ind])
 
-                if self.network.cortical_layer[i] == '2/3':
+                layer = '' if self.network.cortical_layer[i] is None else self.network.cortical_layer[i]
+
+                if '2/3' in layer:
                     # most neurons in L2/3 should project to L5
                     # about half should project into white matter (Callaway & Wiser, 1996, Visual Neuroscience)
                     if interarea_fractions:
                         terms.append(tf.square(tf.reduce_sum(interarea_fractions)-0.5))
                     terms.append(tf.square(tf.reduce_sum(interlaminar_fractions)-1.0))
-                elif self.network.cortical_layer[i] in ['4', '4Calpha', '4Cbeta']:
+                elif '4' in layer:
                     terms.append(tf.square(tf.reduce_sum(interlaminar_fractions)-1.0))
-                elif self.network.cortical_layer[i] == '5':
+                elif '5' in layer:
                     # a minority of L5 and L6 neurons project out, but the other ones aren't
                     # included in the feedforward model
                     if interarea_fractions:
                         terms.append(tf.square(tf.reduce_sum(interarea_fractions)-1.0))
                     terms.append(tf.square(tf.reduce_sum(interlaminar_fractions) - 1.0))
-                elif self.network.cortical_layer[i] == '6':
+                elif '6' in layer:
                     # a minority of L5 and L6 neurons project out, but the other ones aren't
                     # included in the feedforward model
+                    if interarea_fractions:
+                        terms.append(tf.square(tf.reduce_sum(interarea_fractions)-1.0))
+                else:
+                    # assume all are projection cells otherwise (e.g. for LGN)
                     if interarea_fractions:
                         terms.append(tf.square(tf.reduce_sum(interarea_fractions)-1.0))
 

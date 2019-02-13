@@ -296,5 +296,36 @@ def test_param_cost_2(self):
         self.assertAlmostEqual(result, answer, 2)
 
 
+class TestMinRF(unittest.TestCase):
+    def setUp(self):
+        tf.reset_default_graph()
+
+    def test_min_rf(self):
+        image_layer = 0
+
+        cortical_areas = ['V1', 'V2', 'V4']
+
+        from calc.examples.example_systems import make_big_system
+        from calc.stride import StridePattern
+        from calc.optimization import initialize_network
+
+        system = make_big_system(cortical_areas)
+        stride_pattern = StridePattern(system, 32)
+        stride_pattern.fill()
+
+        network = initialize_network(system, stride_pattern, image_layer=0, image_channels=3.)
+        nv = NetworkVariables(network, system, image_layer, system.populations[image_layer].w)
+
+        init = tf.global_variables_initializer()
+        with tf.Session() as sess:
+            sess.run(init)
+            w_rf = sess.run(nv.w_rf)
+
+        for i in range(len(network.layers)):
+            for j in nv.input_layers[i]:
+                self.assertTrue(w_rf[j] < w_rf[i])
+
+
 if __name__ == '__main__':
     unittest.main()
+
