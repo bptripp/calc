@@ -74,15 +74,14 @@ class StridePattern:
         self._reset()
 
     def _reset(self):
-        self.strides = [None] * len(system.projections)
-        self.cumulatives = [None] * len(system.populations)
-        self.cumulative_hints = [None] * len(system.populations)
-        self.min_cumulatives = [1] * len(system.populations)
-        self.max_cumulatives = [self.max_cumulative_stride] * len(system.populations)
-        input_index = system.find_population_index(system.input_name)
+        self.strides = [None] * len(self.system.projections)
+        self.cumulatives = [None] * len(self.system.populations)
+        self.cumulative_hints = [None] * len(self.system.populations)
+        self.min_cumulatives = [1] * len(self.system.populations)
+        self.max_cumulatives = [self.max_cumulative_stride] * len(self.system.populations)
+        input_index = self.system.find_population_index(self.system.input_name)
         self.cumulatives[input_index] = 1
         self.set_hints()
-
 
     def set_hints(self, image_layer=0, image_channels=3, V1_channels=130, other_channels={'LGNparvo': 4, 'LGNmagno': 2, 'LGNkonio': 1}):
         """
@@ -96,7 +95,7 @@ class StridePattern:
         :param other_channels: manual suggestions for subcortical channels
         """
 
-        image_pixels = np.sqrt(system.populations[image_layer].n / image_channels)
+        image_pixels = np.sqrt(self.system.populations[image_layer].n / image_channels)
 
         e07 = E07()
         V1_spine_count = e07.get_spine_count('V1')
@@ -223,8 +222,8 @@ class StridePattern:
 
         for attempt in range(max_attempts):
             # make copies in case we have to revert
-            strides = self.strides[:]
-            cumulatives = self.cumulatives[:]
+            temp_strides = self.strides[:]
+            temp_cumulatives = self.cumulatives[:]
 
             failed = False
 
@@ -233,34 +232,37 @@ class StridePattern:
                 pre_ind = self.system.find_population_index(path[i])
                 post_ind = self.system.find_population_index(path[i+1])
 
-                if self.cumulatives[post_ind] and self.cumulatives[pre_ind]:
-                    strides[projection_ind] = self.cumulatives[post_ind] / self.cumulatives[pre_ind]
-                    if abs(strides[projection_ind] - round(strides[projection_ind])) > 1e-3:
+                if self.cumulatives[post_ind] and temp_cumulatives[pre_ind]:
+                    temp_strides[projection_ind] = self.cumulatives[post_ind] / temp_cumulatives[pre_ind]
+                    if abs(temp_strides[projection_ind] - round(temp_strides[projection_ind])) > 1e-3:
                         # this can happen e.g. if pre is 2 and post is 3 (have to start over then)
                         failed = True
                         break
+                    else:
+                        temp_strides[projection_ind] = int(temp_strides[projection_ind])
+
                 else:
-                    max_for_this_stride = min(max_stride, int(self.max_cumulatives[post_ind]/cumulatives[pre_ind]))
-                    min_for_this_stride = max(min_stride, int(self.min_cumulatives[post_ind]/cumulatives[pre_ind]))
+                    max_for_this_stride = min(max_stride, int(self.max_cumulatives[post_ind]/temp_cumulatives[pre_ind]))
+                    min_for_this_stride = max(min_stride, int(self.min_cumulatives[post_ind]/temp_cumulatives[pre_ind]))
 
                     if max_for_this_stride < min_for_this_stride:
                         failed = True
                         break
 
-                    strides[projection_ind] = self._sample_stride(min_for_this_stride, max_for_this_stride)
-                    cumulatives[post_ind] = cumulatives[pre_ind] * strides[projection_ind]
+                    temp_strides[projection_ind] = self._sample_stride(min_for_this_stride, max_for_this_stride)
+                    temp_cumulatives[post_ind] = temp_cumulatives[pre_ind] * temp_strides[projection_ind]
 
-                    if cumulatives[post_ind] > self.max_cumulatives[post_ind] \
-                            or cumulatives[post_ind] < self.min_cumulatives[post_ind]:
+                    if temp_cumulatives[post_ind] > self.max_cumulatives[post_ind] \
+                            or temp_cumulatives[post_ind] < self.min_cumulatives[post_ind]:
                         # this can happen due to rounding in min_for_this_stride
                         failed = True
                         break
 
             if not failed:
-                end_cumulative = cumulatives[self.system.find_population_index(path[-1])]
+                end_cumulative = temp_cumulatives[self.system.find_population_index(path[-1])]
                 if exact_cumulative is None or exact_cumulative == end_cumulative:
-                    self.strides = strides
-                    self.cumulatives = cumulatives
+                    self.strides = temp_strides
+                    self.cumulatives = temp_cumulatives
                     done = True
                     break
 
@@ -328,14 +330,19 @@ def initialize_network(system, candidate, image_layer=0, image_channels=3.):
 
 
 if __name__ == '__main__':
-    from calc.examples.example_systems import make_big_system, make_small_system
+    from calc.examples.example_systems import make_big_system
+    from calc.optimization import compare_stride_patterns
     import pickle
 
     cortical_areas = ['V1', 'V2', 'V4', 'VOT', 'PITd', 'PITv', 'CITd', 'CITv', 'AITd', 'AITv']
     system = make_big_system(cortical_areas)
 
+    # compare_stride_patterns(system, n=5)
+
     system.prune_FLNe(0.15)
     system.normalize_FLNe()
+    system.check_connected()
+
     # system.print_description()
     # print(len(system.projections))
 

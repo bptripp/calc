@@ -130,4 +130,3 @@ def _print_cost(total_cost, f_cost, b_cost, e_cost, rf_cost, de_cost):
     print('total cost: {} f cost: {} b cost {} e cost {} RF cost: {} dead-end cost: {}'
           .format(total_cost, f_cost, b_cost, e_cost, rf_cost, de_cost))
 
-
