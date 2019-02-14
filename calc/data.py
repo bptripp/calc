@@ -722,12 +722,6 @@ class CoCoMac:
         with open(folder + '/cocomac/connectivity_matrix_densities.json') as file:
             self.densities = json.load(file)
 
-        with open(folder + '/cocomac/FV91_to_M132.json') as file:
-            self.FV91_to_M132 = json.load(file)
-
-        with open(folder + '/cocomac/M132_to_FV91.json') as file:
-            self.M132_to_FV91 = json.load(file)
-
     def get_source_areas(self, target_area):
         # http://cocomac.g-node.org/services/connectivity_matrix.php?dbdate=20141022&AP=AxonalProjections_FV91&square=1&merge=max&format=json&cite=1
 
@@ -742,6 +736,66 @@ class CoCoMac:
                 source_areas.append(source_area)
 
         return source_areas
+
+    def get_connection_details(self, source_area, target_area, guess_missing=False, guess_x=False):
+        """
+        :param source_area: cortical area from which connection originates
+        :param target_area: cortical area in which connection terminates
+        :param guess_missing: if True, missing information is estimated from typical
+            bilaminar-origin patterns according to the areas positions in the visual hierarchy,
+            from Felleman, D. J., & Van Essen, D. C. (1991). Distributed hierarchical processing
+            in the primate cerebral cortex. Cerebral cortex, 1(1), 1-47.
+        :return: if a connection between the areas exists in CoCoMac, a dict with keys
+            source_layers and target_layers, where each is a list of six boolean values
+            indicating whether layers 1-6 participate in the connection at each end. If no connection
+            exists between given areas in CoCoMac, None is returned.
+        """
+        try:
+            layers = self.layers['FV91-{}'.format(source_area)]['FV91-{}'.format(target_area)]
+        except KeyError as e:
+            return None
+
+        if layers[0] is None and layers[1] is None:
+            return None
+        else:
+            if guess_missing:
+                layers = CoCoMac._guess_missing_layers(source_area, target_area, layers)
+
+            if guess_x:
+                layers[0] = layers[0].replace('X', '2')
+                layers[1] = layers[1].replace('X', '2')
+
+            return {'source_layers': layers[0], 'target_layers': layers[1]}
+
+    @staticmethod
+    def _guess_missing_layers(source_area, target_area, layers):
+        if layers[0] is None:
+            layers[0] = '??????'
+        if layers[1] is None:
+            layers[1] = '??????'
+
+        source_level = FV91_hierarchy[source_area]
+        target_level = FV91_hierarchy[target_area]
+
+        # lacking data we will guess bilaminar-origin patterns from FV91 Figure 3
+        if source_level < target_level:
+            guess = ['0XX0XX', '000X00']
+        elif source_level > target_level:
+            guess = ['0XX0XX', 'X0000X']
+        else:
+            guess = ['0XX0XX', 'XXXXXX']
+
+        layers[0] = list(layers[0])
+        layers[1] = list(layers[1])
+        for i in range(6):
+            if layers[0][i] == '?':
+                layers[0][i] = guess[0][i]
+            if layers[1][i] == '?':
+                layers[1][i] = guess[1][i]
+        layers[0] = ''.join(layers[0])
+        layers[1] = ''.join(layers[1])
+
+        return layers
 
 
 class Markov:
@@ -873,7 +927,15 @@ def markov_FLNe_sums():
 
 
 if __name__ == '__main__':
-    pass
+    cocomac = CoCoMac()
+    # print(cocomac.layers.keys())
+    # print(cocomac.layers['FV91-VP'].keys())
+
+    for source_area in areas_FV91:
+        for target_area in areas_FV91:
+            details = cocomac.get_connection_details(source_area, target_area, guess_missing=True, guess_x=True)
+            print('{}->{} {}'.format(source_area, target_area, details))
+
     # markov_FLNe_sums()
 
     # data = Data()

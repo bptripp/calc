@@ -2,11 +2,12 @@
 
 from calc.system import System
 from calc.stride import StridePattern
-from calc.data import Data
+from calc.data import Data, CoCoMac
 from calc.optimization import optimize_network_architecture
 
 
 data = Data()
+cocomac = CoCoMac()
 
 
 def add_areas(system, cortical_areas):
@@ -55,6 +56,9 @@ def connect_areas_in_streams(system, cortical_areas):
 
                 target_pop = '{}_4'.format(target)
 
+                fl5, fl6 = _get_layer_56_source_fractions(source, target)
+                # print('{}->{} fractions L5: {} L6: {}'.format(source, target, fl5, fl6))
+
                 if source == 'V1':
                     if is_ventral(target):
                         # V4 gets 2/3 input, not sure about others
@@ -69,20 +73,34 @@ def connect_areas_in_streams(system, cortical_areas):
                         thin_fraction = .333
                         pale_fraction = .667
                         system.connect_areas('V2thin_2/3', target_pop, thin_fraction*FLNe*SLN/100)
-                        system.connect_areas('V2thin_5', target_pop, .5*thin_fraction*FLNe*(1-SLN/100))
-                        system.connect_areas('V2thin_6', target_pop, .5*thin_fraction*FLNe*(1-SLN/100))
+                        system.connect_areas('V2thin_5', target_pop, fl5*thin_fraction*FLNe*(1-SLN/100))
+                        system.connect_areas('V2thin_6', target_pop, fl6*thin_fraction*FLNe*(1-SLN/100))
                         system.connect_areas('V2pale_2/3', target_pop, pale_fraction*FLNe*SLN/100)
-                        system.connect_areas('V2pale_5', target_pop, .5*pale_fraction*FLNe*(1-SLN/100))
-                        system.connect_areas('V2pale_6', target_pop, .5*pale_fraction*FLNe*(1-SLN/100))
+                        system.connect_areas('V2pale_5', target_pop, fl5*pale_fraction*FLNe*(1-SLN/100))
+                        system.connect_areas('V2pale_6', target_pop, fl6*pale_fraction*FLNe*(1-SLN/100))
                     else:
                         system.connect_areas('V2thick_2/3', target_pop, FLNe*SLN/100)
-                        system.connect_areas('V2thick_5', target_pop, .5*FLNe*(1-SLN/100))
-                        system.connect_areas('V2thick_6', target_pop, .5*FLNe*(1-SLN/100))
+                        system.connect_areas('V2thick_5', target_pop, fl5*FLNe*(1-SLN/100))
+                        system.connect_areas('V2thick_6', target_pop, fl6*FLNe*(1-SLN/100))
                 else:
                     system.connect_areas('{}_2/3'.format(source), target_pop, FLNe*SLN/100)
-                    system.connect_areas('{}_5'.format(source), target_pop, 0.5*FLNe*(1-SLN/100))
-                    system.connect_areas('{}_6'.format(source), target_pop, 0.5*FLNe*(1-SLN/100))
+                    system.connect_areas('{}_5'.format(source), target_pop, fl5*FLNe*(1-SLN/100))
+                    system.connect_areas('{}_6'.format(source), target_pop, fl6*FLNe*(1-SLN/100))
 
+
+def _get_layer_56_source_fractions(source_area, target_area):
+    result = (0.5, 0.5)
+
+    details = cocomac.get_connection_details(source_area, target_area, guess_missing=True, guess_x=True)
+
+    if details and details['source_layers']:
+        l5_strength = float(details['source_layers'][4])
+        l6_strength = float(details['source_layers'][5])
+        total_strength = l5_strength + l6_strength
+        if total_strength > 0:
+            result = (l5_strength/total_strength, l6_strength/total_strength)
+
+    return result
 
 def is_ventral(area):
     # see Schmidt et al. (2018) Fig 7 re. V4t
@@ -342,19 +360,19 @@ if __name__ == '__main__':
     # system.print_description()
     # net, training_curve = calc.optimization.test_stride_patterns(system, n=1)
 
-    import pickle
-    # import numpy as np
-    # import matplotlib.pyplot as plt
-    with open('stride-pattern-ventral.pkl', 'rb') as file:
-        data = pickle.load(file)
-
-    net, training_curve = optimize_network_architecture(data['system'], data['strides'])
-    # net, training_curve = test_stride_pattern(data['system'], data['first_few'][3], False)
-
-    with open('optimization-result.pkl', 'wb') as file:
-        pickle.dump({'net': net, 'training_curve': training_curve}, file)
-
-    print('**********************')
-    print(net)
-    print(training_curve)
-
+    # import pickle
+    # # import numpy as np
+    # # import matplotlib.pyplot as plt
+    # with open('stride-pattern-ventral.pkl', 'rb') as file:
+    #     data = pickle.load(file)
+    #
+    # net, training_curve = optimize_network_architecture(data['system'], data['strides'])
+    # # net, training_curve = test_stride_pattern(data['system'], data['first_few'][3], False)
+    #
+    # with open('optimization-result.pkl', 'wb') as file:
+    #     pickle.dump({'net': net, 'training_curve': training_curve}, file)
+    #
+    # print('**********************')
+    # print(net)
+    # print(training_curve)
+    #

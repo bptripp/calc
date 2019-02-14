@@ -185,6 +185,14 @@ class System:
                 if isinstance(projection, InterAreaProjection):
                     projection.f = projection.f / total_FLNe
 
+            # Here we could reduce # extrinsic inputs to account for ignored FLNe, like this:
+            # population.e = population.e * total_FLNe. However, the ignored FLNe are mostly
+            # due to omission of feedback and lateral connections rather than areas outside the
+            # model, and most of these are not onto L4, which is the layer getting extrinsic
+            # input in the feedforward model. Ideally we would account for L4 inputs due to
+            # lateral connections and areas outside the model, but we ignore these for
+            # simplicity.
+
     def prune_FLNe(self, min_fraction):
         """
         Removes projections that have FLNe less than min_fraction.
