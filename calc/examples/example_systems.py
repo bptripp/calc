@@ -231,7 +231,10 @@ def make_big_system(cortical_areas=None):
     add_areas(system, [a for a in cortical_areas if a not in ('V1', 'V2thin', 'V2thick', 'V2pale')])
     connect_areas_in_streams(system, cortical_areas)
 
+    # It's correct to have this after making connections, as it operates
+    # on actual connections between populations rather than raw FLNe data.
     system.normalize_FLNe()
+
     system.check_connected()
 
     return system
@@ -335,7 +338,7 @@ if __name__ == '__main__':
     #               'VIP', 'PITv', 'PITd', 'MSTl', 'CITv', 'CITd', 'AITv', 'FST', '7a', 'AITd']
 
     # system = make_small_system(miniaturize=True)
-    # system = make_big_system()
+    system = make_big_system()
     # system.print_description()
     # net, training_curve = calc.optimization.test_stride_patterns(system, n=1)
 

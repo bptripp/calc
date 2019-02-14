@@ -576,7 +576,21 @@ class SchmidtData:
             self.data = json.load(file)
 
     def neuron_numbers(self, area, layer):
-        return self.data['realistic_neuron_numbers'][area][self._adapt_layer_name(layer)]
+        numbers = self.data['realistic_neuron_numbers']
+
+        if area == 'TH' and layer == '4':
+            # Schmidt et al. (2018) say that TH lacks L4 but don't give a reference. However
+            # Felleman & Van Essen (1991) say that several connections to TH terminate on L4
+            # (F pattern in their Table 5).
+
+            # from Schmidt et al. supplementary tables S7 and S8
+            TF_volume = 197.40 * 0.21
+            TH_volume = 44.60 * 0.12
+
+            TF_density = numbers['TF'][self._adapt_layer_name('4')] / TF_volume
+            return TF_density * TH_volume
+        else:
+            return numbers[area][self._adapt_layer_name(layer)]
 
     def interarea_synapses_per_neuron(self, area, target_layer):
         """
@@ -636,19 +650,16 @@ class SchmidtData:
                     elif source_layer in ['23I', '4I', '5I', '6I']:
                         inhibitory += n
 
-        n = self._num_neurons(area, target_layer)
+        n = self.neuron_numbers(area, target_layer)
 
         return excitatory/n, inhibitory/n
 
     def _adapt_layer_name(self, layer):
         return '{}E'.format(layer.replace('/', ''))
 
-    def _num_neurons(self, area, target_layer):
-        return self.data['neuron_numbers'][area][self._adapt_layer_name(target_layer)]
-
     def _synapses_per_neuron_external(self, area, target_layer):
         target = self.data['synapses'][area][self._adapt_layer_name(target_layer)]
-        return target['external']['external'] / self._num_neurons(area, target_layer)
+        return target['external']['external'] / self.neuron_numbers(area, target_layer)
 
 
 
