@@ -330,60 +330,27 @@ def initialize_network(system, candidate, image_layer=0, image_channels=3.):
 
 
 if __name__ == '__main__':
-    from calc.examples.example_systems import make_big_system
-    from calc.optimization import compare_stride_patterns
+    from calc.examples.example_systems import make_big_system, miniaturize
     import pickle
 
-    cortical_areas = ['V1', 'V2', 'V4', 'VOT', 'PITd', 'PITv', 'CITd', 'CITv', 'AITd', 'AITv']
-    system = make_big_system(cortical_areas)
+    if False:
+        cortical_areas = ['V1', 'V2', 'V4', 'VOT', 'PITd', 'PITv', 'CITd', 'CITv', 'AITd', 'AITv']
+        system = make_big_system(cortical_areas)
+        miniaturize(system, factor=10)
+        system.prune_FLNe(0.15)
+        system.normalize_FLNe()
+        system.check_connected()
+        filename = 'stride-pattern-ventral-mini.pkl'
+    else:
+        system = make_big_system()
+        filename = 'stride-pattern-msh.pkl'
 
-    # compare_stride_patterns(system, n=5)
-
-    system.prune_FLNe(0.15)
-    system.normalize_FLNe()
-    system.check_connected()
-
-    # system.print_description()
-    # print(len(system.projections))
-
-    # system = calc.system.get_example_small()
-    # system = calc.system.get_example_medium()
-    # path = longest_path(system, 'V4_5')
-    # print(path)
+    system.print_description()
 
     candidate, distances, first_few = get_stride_pattern(system, best_of=1000)
-    with open('stride-pattern.pkl', 'wb') as file:
+    with open(filename, 'wb') as file:
         pickle.dump({'system': system, 'strides': candidate, 'distances': distances, 'first_few': first_few}, file)
-
-    # with open('stride-pattern.pkl', 'rb') as file:
-    #     result = pickle.load(file)
-    # import matplotlib.pyplot as plt
-    # plt.hist(result['distances'])
-    # plt.show()
-
-    # print(candidate.strides)
-    print(candidate.cumulatives)
 
     for i in range(len(system.populations)):
         print('{}: {} vs {}'.format(system.populations[i].name, candidate.cumulatives[i], candidate.cumulative_hints[i]))
-    #
-    # print('distance from hints: {}'.format(candidate.distance_from_hints()))
-
-    net = initialize_network(system, candidate, image_layer=0, image_channels=3.)
-    net.print()
-
-    # net, training_curve = calc.conversion.test_stride_pattern(system)
-    # import matplotlib.pyplot as plt
-    # plt.semilogy(training_curve)
-    # plt.show()
-
-    # calc.conversion.test_stride_patterns(system)
-
-    # candidate.init_path(path)
-    #
-    # for i in range(len(system.projections)):
-    #     projection = system.projections[i]
-    #     print('{}->{}: {}'.format(projection.origin.name, projection.termination.name, candidate.strides[i]))
-    #
-    # print(candidate.longest_unset_path())
 
