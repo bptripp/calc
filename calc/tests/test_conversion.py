@@ -261,7 +261,7 @@ class TestCost(unittest.TestCase):
                      + sess.run(cost.match_cost_w(6.)) \
                      + sess.run(cost.match_cost_f(8.)) \
                      + sess.run(cost.param_cost(10.))
-            self.assertAlmostEqual(result, answer, 2)
+            self.assertAlmostEqual(result, answer, 1)
 
     def test_param_cost_1(self):
         system1, net1, cost1 = get_cost_1()

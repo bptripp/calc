@@ -650,16 +650,30 @@ class SchmidtData:
                     elif source_layer in ['23I', '4I', '5I', '6I']:
                         inhibitory += n
 
-        n = self.neuron_numbers(area, target_layer)
+        n = self._num_neurons_per_mm2(area, target_layer)
 
         return excitatory/n, inhibitory/n
 
     def _adapt_layer_name(self, layer):
         return '{}E'.format(layer.replace('/', ''))
 
+    def _num_neurons_per_mm2(self, area, layer):
+        # return self.data['neuron_numbers'][area][self._adapt_layer_name(target_layer)]
+        numbers = self.data['neuron_numbers']
+
+        if area == 'TH' and layer == '4':
+            TF_volume = 197.40 * 0.21
+            TH_volume = 44.60 * 0.12
+
+            TF_density = numbers['TF'][self._adapt_layer_name('4')] / TF_volume
+            return TF_density * TH_volume
+        else:
+            return numbers[area][self._adapt_layer_name(layer)]
+
+
     def _synapses_per_neuron_external(self, area, target_layer):
         target = self.data['synapses'][area][self._adapt_layer_name(target_layer)]
-        return target['external']['external'] / self.neuron_numbers(area, target_layer)
+        return target['external']['external'] / self._num_neurons_per_mm2(area, target_layer)
 
 
 

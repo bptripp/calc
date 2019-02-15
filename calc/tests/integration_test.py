@@ -119,7 +119,7 @@ def test_rf_size(plot=False):
 
     numerical_sd = input_pixel_width * (indices[within_one_sd[-1]] - indices[within_one_sd[0]]) / 2
     target_sd = system.find_population(path[-1]).w
-    assert np.abs(numerical_sd - target_sd) < .1*target_sd
+    assert np.abs(numerical_sd - target_sd) < .2*target_sd, '{} vs {}'.format(numerical_sd, target_sd)
 
     if plot:
         print('numerical RF width: {} target RF width: {}'.format(numerical_sd, target_sd))
