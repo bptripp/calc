@@ -17,7 +17,7 @@ class Data:
         histogram = np.array(FS09_synapses_per_connection)
         self.synapses_per_connection = np.dot(histogram[:,0], histogram[:,1]) / np.sum(histogram[:,1])
 
-        with open('/Users/bptripp/lib/multi-area-model/multiarea_model/data_multiarea/default_Data_Model_.json', 'r') as f:
+        with open('./data_files/schmidt/default_Data_Model_.json', 'r') as f:
             self.dat = json.load(f)
 
     def get_areas(self):
