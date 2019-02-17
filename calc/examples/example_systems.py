@@ -1,7 +1,7 @@
 # Example systems
 
+import pickle
 from calc.system import System
-from calc.stride import StridePattern
 from calc.data import Data, CoCoMac
 from calc.optimization import optimize_network_architecture
 
@@ -352,27 +352,16 @@ def miniaturize(system, factor=10):
 
 
 if __name__ == '__main__':
-    # cortical_areas = ['V1', 'V2', 'VP', 'V3', 'V3A', 'MT', 'V4t', 'V4', 'MSTd', 'DP',
-    #               'VIP', 'PITv', 'PITd', 'MSTl', 'CITv', 'CITd', 'AITv', 'FST', '7a', 'AITd']
-
     # system = make_small_system(miniaturize=True)
-    system = make_big_system()
-    # system.print_description()
-    # net, training_curve = calc.optimization.test_stride_patterns(system, n=1)
 
-    # import pickle
-    # # import numpy as np
-    # # import matplotlib.pyplot as plt
-    # with open('stride-pattern-ventral.pkl', 'rb') as file:
-    #     data = pickle.load(file)
-    #
-    # net, training_curve = optimize_network_architecture(data['system'], data['strides'])
-    # # net, training_curve = test_stride_pattern(data['system'], data['first_few'][3], False)
-    #
-    # with open('optimization-result.pkl', 'wb') as file:
-    #     pickle.dump({'net': net, 'training_curve': training_curve}, file)
-    #
-    # print('**********************')
-    # print(net)
-    # print(training_curve)
-    #
+    # stride_file = 'stride-pattern-ventral-mini.pkl'
+    # result_file = 'optimization-result-ventral-mini.pkl'
+    stride_file = 'stride-pattern-test.pkl'
+    result_file = 'optimization-result-test.pkl'
+
+    with open(stride_file, 'rb') as file:
+        data = pickle.load(file)
+
+    net, training_curve = optimize_network_architecture(data['system'], data['strides'])
+    with open(result_file, 'wb') as file:
+        pickle.dump({'net': net, 'training_curve': training_curve}, file)
