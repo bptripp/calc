@@ -3,7 +3,8 @@ This file is based on Keras example code.
 """
 
 from __future__ import print_function
-from calc.cnn_keras import make_model_from_network, subsample_maps, prune_maps, prune_connections
+from calc.cnn_keras import make_model_from_network, subsample_maps
+from calc.cnn_keras import prune_maps, prune_connections, prune_layers
 import keras
 from keras.layers import Conv2D
 from keras.datasets import cifar10
@@ -13,22 +14,28 @@ import os
 import pickle
 
 
-if __name__ == '__main__':
-    with open('../../generated-files/calc-training-mini2.pickle', 'rb') as f:
-        data = pickle.load(f)
+model_file = '../../generated-files/calc-CIFAR-model.h5'
 
-    net = data['nets'][3] #25M, 39M, 53M, 7M, 35M
+
+def build_model(save=True):
+    # with open('../optimization-result-ventral-mini.pkl', 'rb') as file:
+    with open('../optimization-result-test.pkl', 'rb') as file:
+        data = pickle.load(file)
+
+    net = data['net']
+
+    for layer in net.layers:
+        layer.m = int(round(layer.m))
+
+    # net = data['nets'][3] #25M, 39M, 53M, 7M, 35M
     #smallest (Trainable params: 92,336,653) (Trainable params: 13,399,251 with pruning)
     # Trainable params: 4,481,743 with pruning and subsampling
     # New network has 54,597,314 params after pruning and subsampling
 
-    last_conv_layer = 'TEpd_5'
+    # last_conv_layer = 'AITv_2/3'
+    last_conv_layer = 'V4_2/3'
+    # last_conv_layer = 'TEpd_5'
     # last_conv_layer = 'V4_4'
-
-    # TODO: clip this in optimization?
-    for connection in net.connections:
-        if connection.w < 1:
-            connection.w = 1
 
     # net.connections[16].w = 1.1 #this might be the bug, was 0.62
     # net.print()
@@ -42,16 +49,27 @@ if __name__ == '__main__':
 
     subsample_indices = subsample_maps(net)
     subsample_indices = prune_maps(net, subsample_indices, last_conv_layer)
-
     subsample_indices = prune_connections(net, subsample_indices)
+    subsample_indices = prune_layers(net, subsample_indices)
+
     # for i in range(len(subsample_indices)):
     #     print('{}->{}: {}'.format(net.connections[i].pre.name, net.connections[i].post.name, len(subsample_indices[i])))
+
+    for layer in net.layers:
+        if layer.m < 1:
+            print('{} has {} maps'.format(layer.name, layer.m))
+
+    for connection in net.connections:
+        if connection.w < 1:
+            print('setting w to 1 for {}->{}'.format(connection.pre.name, connection.post.name))
+            connection.w = 1
 
     net.print()
     # assert False
 
     input_layer = net.find_layer('INPUT')
-    input_channels = int(input_layer.m)
+    # input_channels = int(input_layer.m)
+    input_channels = input_layer.m
     input_width = 32  # need this for CIFAR-10 (like looking through a hole)
     input = keras.Input(shape=(input_width, input_width, input_channels, ))
 
@@ -64,15 +82,25 @@ if __name__ == '__main__':
     layer_classifier = Dense(10, activation='softmax')(layer_d2)
     model = keras.Model(inputs=input, outputs=layer_classifier)
 
-    # model.save('../../generated-files/calc-CIFAR-model.h5')
-    #
-    # model = keras.models.load_model('../../generated-files/calc-CIFAR-model.h5')
+    if save:
+        model.save(model_file)
+
+    return model
+
+
+def load_model():
+    return keras.models.load_model('../../generated-files/calc-CIFAR-model.h5')
+
+
+if __name__ == '__main__':
 
     # # add custom regularizers and constraints after loading, as Keras doesn't like to deserialize them
     # for layer in model.layers:
     #     if isinstance(layer, Conv2D):
     #         layer.kernel_regularizer = L1Control(l1=0.001)
     #         layer.kernel_constraint = SnapToZero()
+
+    model = build_model(save=False)
 
     batch_size = 32
     num_classes = 10

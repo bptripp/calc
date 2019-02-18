@@ -2,15 +2,54 @@ import random
 import copy
 import numpy as np
 import keras
-from keras.layers import Conv2D, Activation, BatchNormalization, Lambda, Concatenate
-from calc.sparsity import SnapToZero, L1Control
+from keras.layers import Conv2D, Activation, BatchNormalization, Lambda
+from keras.constraints import Constraint
+from keras import backend as K
 
 
 def subsample_maps(net):
+    """
+    Randomly samples presynaptic feature maps that contribute to each connection.
+    We try to make sets of maps of a given layer that contribute to different
+    interarea connections mostly disjoint, although this doesn't have to be done
+    strictly, and in any case it's not always possible as the total across connections
+    may be greater than the number of maps. We do the same for interlaminar connections.
+
+    :param net: a Network
+    :return: indices of presynaptic feature maps to use in each connection
+    """
+
+    # start with uniform probability that each map is selected for inclusion in a connection;
+    # reduce probability of selecting a given map again whenever it is selected
+    probability_reduction = .01
+    interarea_probabilities = []
+    interlaminar_probabilities = []
+    for layer in net.layers:
+        interarea_probabilities.append(np.ones(layer.m))
+        interlaminar_probabilities.append(np.ones(layer.m))
+
     subsample_indices = []
     for connection in net.connections:
         n_maps = int(round(connection.pre.m * connection.c))
-        subsample_indices.append(random.sample(range(int(connection.pre.m)), n_maps))
+        pre_index = net.find_layer_index(connection.pre.name)
+
+        pre_cortical_area = connection.pre.name.split('_')[0]
+        post_cortical_area = connection.post.name.split('_')[0]
+        if pre_cortical_area == post_cortical_area: # interlaminar
+            p = interlaminar_probabilities[pre_index]
+        else:
+            p = interarea_probabilities[pre_index]
+
+        indices = np.random.choice(range(int(connection.pre.m)), n_maps, replace=False, p=p/np.sum(p))
+        for i in indices:
+            p[i] = p[i]*probability_reduction
+        subsample_indices.append(indices)
+
+    # for i in range(len(net.layers)):
+    #     print(net.layers[i].name)
+    #     print(np.mean(interarea_probabilities[i]))
+    #     print(np.mean(interlaminar_probabilities[i]))
+
     return subsample_indices
 
 
@@ -49,7 +88,7 @@ def prune_maps(net, subsample_indices, output_name):
     for i in range(len(net.layers)):
         layer = net.layers[i]
 
-        if not layer.name == output_name:
+        if not layer.name == output_name and not layer.name == 'INPUT':
             connections = net.find_outbounds(layer.name)
 
             for connection in connections:
@@ -85,6 +124,37 @@ def prune_connections(net, subsample_indices):
             new_subsample_indices.append(subsample_indices[i])
 
     net.connections = new_connections
+    return new_subsample_indices
+
+
+def prune_layers(net, subsample_indices):
+    """
+    Remove layers with no maps and their associated connections. It is possible
+    for a layers to lose all its maps in prune_maps().
+
+    :param net: a Network
+    :return: updated Network with empty layers and associated connections removed
+    """
+    new_layers = []
+
+    discarded_names = []
+    for layer in net.layers:
+        if layer.m > 0:
+            new_layers.append(layer)
+        else:
+            discarded_names.append(layer.name)
+
+    new_connections = []
+    new_subsample_indices = []
+    for i in range(len(net.connections)):
+        connection = net.connections[i]
+        if connection.pre.name not in discarded_names and connection.post.name not in discarded_names:
+            new_connections.append(connection)
+            new_subsample_indices.append(subsample_indices[i])
+
+    net.layers = new_layers
+    net.connections = new_connections
+
     return new_subsample_indices
 
 
@@ -154,18 +224,20 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
                         w = int(np.round(inbound.w))
                         s = int(np.round(inbound.s))
 
-                        # print('origin: {} termination: {} m: {} w: {} stride: {}'.format(inbound.pre.name, layer.name, m, w, s))
+                        if m == 0 or w == 0:
+                            print('origin: {} termination: {} m: {} w: {} stride: {}'.format(inbound.pre.name, layer.name, m, w, s))
+
                         name = '{}-{}'.format(inbound.pre.name, layer.name)
                         input_layer = complete_layers[inbound.pre.name]
                         print('connecting {}'.format(name))
 
-                        if subsample_indices[inbound_index]:
+                        print('subsample indices: {}'.format(subsample_indices[inbound_index]))
+                        if len(subsample_indices[inbound_index]) > 0:
                             ml = get_map_list(input_layer) #TODO: build a single list that's shared across connections
                             subsampled = get_map_concatenation(ml, subsample_indices[inbound_index])
 
                             conv_layer = Conv2D(m, (w, w), strides=(s, s), padding='same', name=name,
-                                                kernel_regularizer=L1Control(l1=0.0001, target=inbound.sigma),
-                                                kernel_constraint=SnapToZero()
+                                                kernel_constraint=SparsityConstraint((w, w), m, len(subsample_indices[inbound_index]), inbound.sigma)
                                                 )(subsampled)
                             # conv_layer = Conv2D(m, (w, w), strides=(s, s), padding='same', name=name)(subsampled)
                             conv_layers.append(conv_layer)
@@ -184,6 +256,7 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
 
     return complete_layers[output_name]
 
+
 def test_subsample_of_non_continuous_maps():
     from keras.layers import Input, Lambda, Concatenate
     x = Input((28, 28, 1))
@@ -200,6 +273,29 @@ def test_subsample_of_non_continuous_maps():
     print(x.shape)
     print(x0.shape)
     print(x02.shape)
+
+
+class SparsityConstraint(Constraint):
+    """
+    Maintains kernel sparseness by resetting some entries to 0 at each step.
+    """
+
+    def __init__(self, kernel_shape, post_maps, pre_maps, sigma):
+        """
+        :param kernel_shape: kernel shape (width, height)
+        :param post_maps: number of postsynaptic feature maps
+        :param pre_maps: number of presynaptic feature maps
+        :param sigma: weight-level sparsity parameter (fraction non-zero elements)
+        """
+        self.non_zero = (np.random.rand(kernel_shape[0], kernel_shape[1], pre_maps, post_maps) <= sigma)
+        self.mask = K.constant(1 * self.non_zero)
+        # self.description = 'kernel: {} pre_maps: {} maps: {}'.format(kernel_shape, pre_maps, post_maps)
+
+    def __call__(self, w):
+        # print(self.description)
+        print(w.shape)
+        print(self.mask.shape)
+        return self.mask * w
 
 
 if __name__ == '__main__':
