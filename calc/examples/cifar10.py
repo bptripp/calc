@@ -177,13 +177,6 @@ if __name__ == '__main__':
                                 callbacks=[checkpoint_callback, early_stopping_callback],
                                 steps_per_epoch=x_train.shape[0]/batch_size)
 
-            l1s = []
-            for layer in model.layers:
-                if isinstance(layer, Conv2D) and hasattr(layer, 'kernel_regularizer'):
-                    l1 = layer.kernel_regularizer.control(layer)
-                    l1s.append(l1)
-            print('L1 weights:')
-            print(l1s)
 
     # Save model and weights
     if not os.path.isdir(save_dir):
