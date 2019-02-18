@@ -598,6 +598,9 @@ class SchmidtData:
         :param target_layer: name of layer that contains cell bodies of target cells
         :return: estimate of mean # excitatory synapses per neuron from other cortical areas
         """
+        if area == 'TH' and target_layer == '4': # missing data for TH; use neighbour
+            area = 'TF'
+
         return self._synapses_per_neuron(area, target_layer, include_interlaminar=False)[0]
 
     def interlaminar_synapses_per_neuron(self, area, source_layer, target_layer):
@@ -608,6 +611,9 @@ class SchmidtData:
         :return: estimate of mean # excitatory synapses per neuron from within same cortical area
             and given source layer
         """
+        if area == 'TH' and (source_layer == '4' or target_layer == '4'): # missing data for TH; use neighbour
+            area = 'TF'
+
         patch_factor = self._get_patch_factor(area, target_layer)
 
         source_layer = self._adapt_layer_name(source_layer)

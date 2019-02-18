@@ -1,5 +1,3 @@
-import tensorflow as tf
-
 # TODO: consider changing w -> w_k and width -> w_map
 
 class Layer:
