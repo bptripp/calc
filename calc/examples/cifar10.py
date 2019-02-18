@@ -174,7 +174,8 @@ if __name__ == '__main__':
                                 epochs=1,
                                 validation_data=(x_test, y_test),
                                 workers=4,
-                                callbacks=[checkpoint_callback, early_stopping_callback])
+                                callbacks=[checkpoint_callback, early_stopping_callback],
+                                steps_per_epoch=x_train.shape[0]/batch_size)
 
             l1s = []
             for layer in model.layers:
