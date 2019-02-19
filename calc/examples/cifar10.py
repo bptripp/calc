@@ -3,6 +3,11 @@ This file is based on Keras example code.
 """
 
 from __future__ import print_function
+import os
+import sys
+sys.path.insert(0, os.getcwd())
+
+
 from calc.cnn_keras import make_model_from_network, subsample_maps
 from calc.cnn_keras import prune_maps, prune_connections, prune_layers
 import keras
@@ -14,12 +19,12 @@ import os
 import pickle
 
 
-model_file = '../../generated-files/calc-CIFAR-model.h5'
+model_file = 'calc-CIFAR-model.h5'
 
 
 def build_model(save=True):
     # with open('../optimization-result-ventral-mini.pkl', 'rb') as file:
-    with open('../optimization-result-test.pkl', 'rb') as file:
+    with open('calc/optimization-result-PITd.pkl', 'rb') as file:
         data = pickle.load(file)
 
     net = data['net']
@@ -89,7 +94,7 @@ def build_model(save=True):
 
 
 def load_model():
-    return keras.models.load_model('../../generated-files/calc-CIFAR-model.h5')
+    return keras.models.load_model(model_file)
 
 
 if __name__ == '__main__':
