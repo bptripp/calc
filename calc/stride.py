@@ -23,7 +23,6 @@ Note this code assumes the network has a single input.
 
 import numpy as np
 import networkx as nx
-import calc.conversion
 import calc.system, calc.network
 from calc.data import areas_FV91, E07
 
@@ -333,19 +332,19 @@ if __name__ == '__main__':
     from calc.examples.example_systems import make_big_system, miniaturize
     import pickle
 
-    if False:
-        cortical_areas = ['V1', 'V2', 'V4', 'VOT', 'PITd', 'PITv', 'CITd', 'CITv', 'AITd', 'AITv']
-        system = make_big_system(cortical_areas)
+    if True:
+        ventral_areas = ['V1', 'V2', 'V4', 'VOT', 'PITd', 'PITv', 'CITd', 'CITv', 'AITd', 'AITv']
+        areas_to_include = 5
+        system = make_big_system(ventral_areas[:areas_to_include])
         miniaturize(system, factor=10)
         system.prune_FLNe(0.15)
         system.normalize_FLNe()
         system.check_connected()
-        filename = 'stride-pattern-ventral-mini.pkl'
-    else:
+        filename = 'stride-pattern-{}.pkl'.format(ventral_areas[areas_to_include-1])
+
+    if False:
         system = make_big_system()
         filename = 'stride-pattern-msh.pkl'
-
-    system.print_description()
 
     candidate, distances, first_few = get_stride_pattern(system, best_of=1000)
     with open(filename, 'wb') as file:
