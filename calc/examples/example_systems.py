@@ -1,10 +1,10 @@
 # Example systems
 
+
 import pickle
 from calc.system import System
 from calc.data import Data, CoCoMac
 from calc.optimization import optimize_network_architecture
-
 
 data = Data()
 cocomac = CoCoMac()
@@ -45,7 +45,7 @@ def connect_areas_in_streams(system, cortical_areas):
     Dorsal / ventral aware version. Include V1 and V2 in cortical_areas, but they must be
     connected to each other separately.
     """
-    for target in [a for a in cortical_areas if a not in ('V1', 'V2thin', 'V2thick', 'V2pale')]:
+    for target in [a for a in cortical_areas if a not in ('V1', 'V2')]:
         for source in data.get_source_areas(target, feedforward_only=True):
             # print(source)
             if source in cortical_areas:
@@ -164,7 +164,7 @@ def make_big_system(cortical_areas=None):
         else:
             n = _get_num_ff_neurons('V1', layer)
 
-        e = data.get_extrinsic_inputs('V1', '4') if layer[0] == '4' else None
+        e = data.get_extrinsic_inputs('V1', '4') if layer.startswith('4C') else None
 
         if '2/3' in layer:
             # Livingston & Hubel (1988) cite Livingston & Hubel (1984) re larger RF sizes in blobs
@@ -246,7 +246,7 @@ def make_big_system(cortical_areas=None):
         cortical_areas = data.get_areas()[:]
         cortical_areas.remove('MDP') # MDP has no inputs in CoCoMac
 
-    add_areas(system, [a for a in cortical_areas if a not in ('V1', 'V2thin', 'V2thick', 'V2pale')])
+    add_areas(system, [a for a in cortical_areas if a not in ('V1', 'V2')])
     connect_areas_in_streams(system, cortical_areas)
 
     # It's correct to have this after making connections, as it operates
@@ -306,62 +306,20 @@ def miniaturize(system, factor=10):
             population.n = population.n / factor
 
 
-# def make_small_system(miniaturize=False):
-#     #TODO: add V2 stripe distinctions (extract methods for parvo and magno early vision?)
-#     cortical_areas = ['V1', 'V2', 'V4', 'VOT', 'PITv', 'PITd', 'CITv', 'CITd', 'AITv', 'AITd', 'TH']
-#
-#     system = System()
-#     system.add_input(750000, .2)
-#
-#     area = 'V1'
-#     for layer in ['2/3', '4Cbeta', '5']:
-#         name = _pop_name(area, layer)
-#
-#         n = _get_num_ff_neurons(area, layer)
-#         e = data.get_extrinsic_inputs(area, '4') if layer == '4Cbeta' else None
-#         w = data.get_receptive_field_size(area) if layer == '2/3' else None
-#
-#         system.add(name, n, e, w)
-#
-#     system.connect_areas(system.input_name, 'V1_4Cbeta', 1.)
-#     system.connect_layers(_pop_name(area, '4Cbeta'), _pop_name(area, '2/3'), data.get_inputs_per_neuron(area, '4', '2/3'))
-#     system.connect_layers(_pop_name(area, '2/3'), _pop_name(area, '5'), data.get_inputs_per_neuron(area, '2/3', '5'))
-#     system.connect_layers(_pop_name(area, '4Cbeta'), _pop_name(area, '5'), data.get_inputs_per_neuron(area, '4', '5'))
-#
-#     add_areas(system, [area for area in cortical_areas if area != 'V1'])
-#     connect_areas(system, cortical_areas)
-#
-#     system.normalize_FLNe()
-#     system.check_connected()
-#
-#     # graph = system.make_graph()
-#     # import networkx as nx
-#     # import matplotlib.pyplot as plt
-#     # from calc.system import get_layout
-#     # nx.draw_networkx(graph, pos=get_layout(system), arrows=True, font_size=10, node_size=1200, node_color='white')
-#     # plt.show()
-#
-#     if miniaturize:
-#         for population in system.populations:
-#             if population.name != system.input_name:
-#                 population.n = population.n / 20
-#
-#     system.normalize_FLNe()
-#     system.check_connected()
-#     return system
-
-
 if __name__ == '__main__':
-    # system = make_small_system(miniaturize=True)
+    from calc.stride import StridePattern
 
-    # stride_file = 'stride-pattern-ventral-mini.pkl'
-    # result_file = 'optimization-result-ventral-mini.pkl'
-    stride_file = 'stride-pattern-test.pkl'
-    result_file = 'optimization-result-test.pkl'
+    # stride_file = 'stride-pattern-PITd.pkl'
+    # result_file = 'optimization-result-PITd.pkl'
+    stride_file = 'stride-pattern-msh.pkl'
+    result_file = 'optimization-result-msh.pkl'
 
     with open(stride_file, 'rb') as file:
         data = pickle.load(file)
 
+    data['system'].print_description()
+
     net, training_curve = optimize_network_architecture(data['system'], data['strides'])
     with open(result_file, 'wb') as file:
         pickle.dump({'net': net, 'training_curve': training_curve}, file)
+
