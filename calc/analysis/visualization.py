@@ -22,12 +22,19 @@ def plot_FLNe(system, figsize=(8,6), network=None):
         layer = pop.name.split('-')[0]
         if layer == 'Conv2D':
             layer = ''
-        if '_2/3' in layer or '_5' in layer:
+        if '_2/3' in layer and not 'interblob' in layer or '_5' in layer or '_6' in layer:
+            layer = ''
+        if layer == 'parvo_LGN' or layer == 'konio_LGN' or layer == 'V1_4Cbeta':
             layer = ''
         layers.append(layer)
 
     FLNe = np.zeros((len(layers), len(layers)))
     # for projection in system.projections:
+
+    if network is not None:
+        assert len(network.connections) == len(system.projections), \
+            '{} vs {}'.format(len(network.connections), len(system.projections))
+
     for index in range(len(system.projections)):
         projection = system.projections[index]
         i = system.find_population_index(projection.origin.name)
@@ -94,7 +101,7 @@ def plot_population_sizes():
 
 def get_depths(layer_names):
     result = []
-    layer_levels = {'4': 1, '4Calpha': 1, '4Cbeta': 1, '4B': 1, '2/3': 2, '5': 3}
+    layer_levels = {'4': 1, '4Calpha': 1, '4Cbeta': 1, '4B': 2, '2/3': 2, '2/3blob': 2, '2/3interblob': 2, '5': 3, '6': 4}
     for name in layer_names:
         if '_' in name:
             area = name.split('_')[0]
@@ -104,7 +111,7 @@ def get_depths(layer_names):
             if area in FV91_hierarchy.keys():
                 cortical_level = FV91_hierarchy[area]
                 layer_level = layer_levels[layer]
-                depth = 1 + 3*(cortical_level-1) + layer_level
+                depth = 1 + 4*(cortical_level-1) + layer_level
             else:
                 depth = 1
         else:
@@ -284,6 +291,11 @@ def plot_kernel_sizes():
         net = get_network(network_names[i])
         # w = [int(np.round(conn.w)) for conn in net.connections]
         w = [np.clip(conn.w, 0, 70) for conn in net.connections]
+
+        if i == 0:
+            actual_w = [conn.w for conn in net.connections]
+            print('max width: {} n > 300: {}'.format(np.max(actual_w), sum(np.array(actual_w) > 300)))
+
         axes[i].hist(w, bins=bin_edges)
         axes[i].set_title(network_names[i], fontsize=18)
 
@@ -300,8 +312,8 @@ def plot_kernel_sizes():
     axes[2].set_ylabel('Count')
     axes[-1].set_xlabel('Kernel width')
     plt.tight_layout()
-    plt.savefig('kernel-width.eps')
-    plt.savefig('kernel-width.pdf')
+    plt.savefig('figures/kernel-width.eps')
+    plt.savefig('figures/kernel-width.pdf')
     plt.show()
 
 
@@ -333,8 +345,8 @@ def plot_stride():
     axes[2].set_ylabel('Count')
     axes[-1].set_xlabel('Stride')
     plt.tight_layout()
-    plt.savefig('stride.eps')
-    plt.savefig('stride.pdf')
+    plt.savefig('figures/stride.eps')
+    plt.savefig('figures/stride.pdf')
     plt.show()
 
 
@@ -422,17 +434,30 @@ def get_system(name):
     if name.lower() == 'macaque':
         system = make_big_system()
 
-        name_order = ['INPUT', 'parvo_LGN', 'magno_LGN', 'konio_LGN', 'V1_4Calpha', 'V1_4Cbeta', 'V1_4B', 'V1_2/3', 'V1_5',
-         'V2thick_2/3', 'V2thick_4', 'V2thick_5', 'V2thin_2/3', 'V2thin_4', 'V2thin_5', 'VP_2/3', 'VP_4', 'VP_5', 'V3_2/3',
-         'V3_4', 'V3_5', 'V3A_2/3', 'V3A_4', 'V3A_5', 'PIP_2/3', 'PIP_4', 'PIP_5', 'MT_2/3', 'MT_4', 'MT_5', 'V4t_2/3', 'V4t_4', 'V4t_5', 'V4_2/3',
-         'V4_4', 'V4_5', 'VOT_2/3', 'VOT_4', 'VOT_5', 'PO_2/3',
-         'PO_4', 'PO_5', 'DP_2/3', 'DP_4', 'DP_5', 'MSTd_2/3', 'MSTd_4', 'MSTd_5', 'MIP_2/3', 'MIP_4', 'MIP_5', 'VIP_2/3', 'VIP_4', 'VIP_5', 'LIP_2/3',
-         'LIP_4', 'LIP_5', 'PITv_2/3', 'PITv_4', 'PITv_5', 'PITd_2/3', 'PITd_4', 'PITd_5', 'MSTl_2/3', 'MSTl_4', 'MSTl_5',
-         'CITv_2/3', 'CITv_4', 'CITv_5', 'CITd_2/3', 'CITd_4', 'CITd_5', 'AITv_2/3',
-         'AITv_4', 'AITv_5', 'FST_2/3', 'FST_4', 'FST_5', 'FEF_2/3', 'FEF_4', 'FEF_5', '7a_2/3', '7a_4', '7a_5', 'STPp_2/3',
-         'STPp_4', 'STPp_5', 'STPa_2/3', 'STPa_4', 'STPa_5', 'AITd_2/3', 'AITd_4', 'AITd_5', '46_2/3', '46_4', '46_5',
-         'TF_2/3', 'TF_4', 'TF_5', 'TH_2/3', 'TH_4', 'TH_5']
+        name_order = ['INPUT', 'parvo_LGN', 'magno_LGN', 'konio_LGN', 'V1_4Calpha', 'V1_4Cbeta', 'V1_4B',
+                'V1_2/3blob', 'V1_2/3interblob', 'V1_5', 'V1_6',
+                'V2thick_2/3', 'V2thick_4', 'V2thick_5', 'V2thick_6',
+                'V2thin_2/3', 'V2thin_4', 'V2thin_5', 'V2thin_6',
+                'V2pale_2/3', 'V2pale_4', 'V2pale_5', 'V2pale_6',
+                'VP_2/3', 'VP_4', 'VP_5', 'VP_6', 'V3_2/3',
+                'V3_4', 'V3_5', 'V3_6', 'V3A_2/3', 'V3A_4', 'V3A_5', 'V3A_6', 'PIP_2/3', 'PIP_4', 'PIP_5', 'PIP_6',
+                'MT_2/3', 'MT_4', 'MT_5', 'MT_6', 'V4t_2/3', 'V4t_4', 'V4t_5', 'V4t_6', 'V4_2/3',
+                'V4_4', 'V4_5', 'V4_6', 'VOT_2/3', 'VOT_4', 'VOT_5', 'VOT_6', 'PO_2/3',
+                'PO_4', 'PO_5', 'PO_6', 'DP_2/3', 'DP_4', 'DP_5', 'DP_6', 'MSTd_2/3', 'MSTd_4', 'MSTd_5', 'MSTd_6',
+                'MIP_2/3', 'MIP_4', 'MIP_5', 'MIP_6', 'VIP_2/3', 'VIP_4', 'VIP_5', 'VIP_6', 'LIP_2/3',
+                'LIP_4', 'LIP_5', 'LIP_6', 'PITv_2/3', 'PITv_4', 'PITv_5', 'PITv_6', 'PITd_2/3', 'PITd_4', 'PITd_5', 'PITd_6',
+                'MSTl_2/3', 'MSTl_4', 'MSTl_5', 'MSTl_6',
+                'CITv_2/3', 'CITv_4', 'CITv_5', 'CITv_6', 'CITd_2/3', 'CITd_4', 'CITd_5', 'CITd_6', 'AITv_2/3',
+                'AITv_4', 'AITv_5', 'AITv_6', 'FST_2/3', 'FST_4', 'FST_5', 'FST_6', 'FEF_2/3', 'FEF_4', 'FEF_5', 'FEF_6',
+                '7a_2/3', '7a_4', '7a_5', '7a_6', 'STPp_2/3',
+                'STPp_4', 'STPp_5', 'STPp_6', 'STPa_2/3', 'STPa_4', 'STPa_5', 'STPa_6',
+                'AITd_2/3', 'AITd_4', 'AITd_5', 'AITd_6', '46_2/3', '46_4', '46_5', '46_6',
+                'TF_2/3', 'TF_4', 'TF_5', 'TF_6', 'TH_2/3', 'TH_4', 'TH_5', 'TH_6']
         populations = [system.find_population(name) for name in name_order]
+        # system.print_description()
+
+        print([p.name for p in system.populations])
+        assert len(system.populations) == len(populations), '{} {}'.format(len(system.populations), len(populations))
         system.populations = populations
 
         return system
@@ -443,7 +468,10 @@ def get_system(name):
 
 def get_network(name):
     if name.lower() == 'macaque' or name == 'MSH': # load saved optimized network
-        with open('../optimization-result-fixed-f.pkl', 'rb') as file:
+        # filename = '../optimization-result-fixed-f.pkl'
+        # filename = 'optimization-result-msh-best.pkl'
+        filename = 'optimization-result-msh-0.pkl'
+        with open(filename, 'rb') as file:
             data = pickle.load(file)
         return data['net']
     else:
@@ -463,6 +491,37 @@ def count_parameters(net):
     print('# parameters (ignoring pooling etc.): {} (sparse) {} (dense)'.format(sparse_result, dense_result))
 
 
+def fix_network():
+    """
+    I accidentally included V2 in the network in addition to it's stripes. It has input but no output,
+    so this won't affect the optimization of other areas/connections, but I have to remove V2.
+    """
+    filename = 'optimization-result-msh-1.pkl'
+
+    with open(filename, 'rb') as file:
+        data = pickle.load(file)
+
+    net = data['net']
+
+    layers = []
+    for layer in net.layers:
+        if not 'V2_' in layer.name:
+            layers.append(layer)
+
+    connections = []
+    for connection in net.connections:
+        if not ('V2_' in connection.pre.name or 'V2_' in connection.post.name):
+            connections.append(connection)
+
+    net.layers = layers
+    net.connections = connections
+
+    data['net'] = net
+
+    with open(filename, 'wb') as file:
+        pickle.dump(data, file)
+
+
 def load_cnn(name):
     if name == 'VGG-16':
         return applications.VGG16()
@@ -471,7 +530,8 @@ def load_cnn(name):
     elif name == 'ResNet50':
         return applications.ResNet50()
     elif name == 'DenseNet121':
-        weights_path = '{}/imagenet_models/densenet121_weights_tf.h5'.format(os.path.dirname(inspect.stack()[0][1]))
+        # weights_path = '{}/imagenet_models/densenet121_weights_tf.h5'.format(os.path.dirname(inspect.stack()[0][1]))
+        weights_path = '/Users/bptripp/code/calc-old/imagenet_models/densenet121_weights_tf.h5'.format(os.path.dirname(inspect.stack()[0][1]))
         return DenseNet(reduction=0.5, classes=1000, weights_path=weights_path)
     else:
         raise ValueError('Unknown CNN: {}'.format(name))
@@ -486,6 +546,7 @@ if __name__ == '__main__':
     # figsize=(4,4)
     # system = get_system('DenseNet121')
     # figsize=(9,9)
+
     # system = get_system('macaque')
     # network = get_network('macaque')
     # figsize=(10,10)
@@ -504,8 +565,8 @@ if __name__ == '__main__':
     # plot_kernel_sizes()
     # plot_stride()
 
-    macaque_system = get_system('Macaque')
-    print(get_skip_lengths(macaque_system))
+    # macaque_system = get_system('Macaque')
+    # print(get_skip_lengths(macaque_system))
     # plot_sparsity()
 
-    # count_parameters(get_network('Macaque'))
+    count_parameters(get_network('Macaque'))

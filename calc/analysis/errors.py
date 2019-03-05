@@ -55,8 +55,9 @@ def get_results(version):
 
 
 if __name__ == '__main__':
-    one = get_results('fixed-f')
-    two = get_results('fixed-g')
+    one = get_results('msh-best')
+    two = get_results('msh-0')
+    # two = get_results('fixed-g')
 
     # system = make_big_system()
     #
@@ -98,10 +99,15 @@ if __name__ == '__main__':
     # plt.hist(in_degrees, 30)
     # plt.show()
 
+    target_values = []
+    actual_values = []
 
     plt.figure(figsize=(3,2.5))
     plt.scatter(one['e'][:, 0], one['e'][:, 1], c='#A0A0A0', marker='^')
-    plt.scatter(two['e'][:, 0], two['e'][:, 1], c='k', marker='+')
+    target_values.extend(one['e'][:, 0])
+    actual_values.extend(one['e'][:, 1])
+    if two:
+        plt.scatter(two['e'][:, 0], two['e'][:, 1], c='k', marker='+')
     plt.title('Extrinsic inputs')
     plt.tight_layout()
     plt.savefig('figures/e.eps')
@@ -109,7 +115,10 @@ if __name__ == '__main__':
 
     plt.figure(figsize=(3,2.5))
     plt.scatter(one['n'][:, 0], one['n'][:, 1], c='#A0A0A0', marker='^')
-    plt.scatter(two['n'][:, 0], two['n'][:, 1], c='k', marker='+')
+    target_values.extend(one['n'][:, 0])
+    actual_values.extend(one['n'][:, 1])
+    if two:
+        plt.scatter(two['n'][:, 0], two['n'][:, 1], c='k', marker='+')
     plt.title('Number of units')
     plt.tight_layout()
     plt.savefig('figures/n.eps')
@@ -118,7 +127,10 @@ if __name__ == '__main__':
     plt.figure(figsize=(3,2.5))
     # plt.scatter(c['w_rf'][:,0], c['w_rf'][:,1])
     plt.scatter(one['w_rf'][:, 0], one['w_rf'][:, 1], c='#A0A0A0', marker='^')
-    plt.scatter(two['w_rf'][:, 0], two['w_rf'][:, 1], c='k', marker='+')
+    target_values.extend(one['w_rf'][:, 0])
+    actual_values.extend(one['w_rf'][:, 1])
+    if two:
+        plt.scatter(two['w_rf'][:, 0], two['w_rf'][:, 1], c='k', marker='+')
     plt.title('RF width')
     plt.tight_layout()
     plt.savefig('figures/w_rf.eps')
@@ -132,7 +144,10 @@ if __name__ == '__main__':
     plt.figure(figsize=(3,2.5))
     # plt.scatter(c['b'][:,0], c['b'][:,1])
     plt.scatter(one['b'][:, 0], one['b'][:, 1], c='#A0A0A0', marker='^')
-    plt.scatter(two['b'][:, 0], two['b'][:, 1], c='k', marker='+')
+    target_values.extend(one['b'][:, 0])
+    actual_values.extend(one['b'][:, 1])
+    if two:
+        plt.scatter(two['b'][:, 0], two['b'][:, 1], c='k', marker='+')
     plt.title('Inter-laminar in-degree')
     plt.tight_layout()
     plt.savefig('figures/b.eps')
@@ -141,10 +156,23 @@ if __name__ == '__main__':
     plt.figure(figsize=(3,2.5))
     # plt.scatter(c['f'][:,0], c['f'][:,1])
     plt.scatter(one['f'][:, 0], one['f'][:, 1], c='#A0A0A0', marker='^')
-    plt.scatter(two['f'][:, 0], two['f'][:, 1], c='k', marker='+')
+    target_values.extend(one['f'][:, 0])
+    actual_values.extend(one['f'][:, 1])
+    if two:
+        plt.scatter(two['f'][:, 0], two['f'][:, 1], c='k', marker='+')
     plt.title('FLNe')
     plt.tight_layout()
     plt.savefig('figures/f.eps')
     plt.show()
 
     print('f correlation: {}'.format(np.corrcoef(one['f'][:, 1], two['f'][:, 1])))
+
+    target_values = np.array(target_values)
+    actual_values = np.array(actual_values)
+    percent_error = 100 * (actual_values - target_values) / target_values
+    percent_error = [p for p in percent_error if not np.isnan(p)]
+    print(percent_error)
+    print(np.argmax(percent_error))
+    plt.hist(percent_error)
+    plt.show()
+    print('percent error {}+/-{}'.format(np.nanmean(percent_error), np.nanstd(percent_error)))
