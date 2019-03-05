@@ -235,6 +235,44 @@ class System:
             if i not in input_indices:
                 assert self.find_pre(pop.name), '{} has no inputs'.format(pop.name)
 
+    def merge_populations(self, to_keep, to_merge):
+        """
+        Combines two populations, resulting in a population that has all the connections of both.
+
+        :param to_keep: Name of merged population to keep
+        :param to_merge: Name of merged population to remove after the merge
+        """
+        # this could create redundant self-projections, but at the moment the code base doesn't do self-projections
+        # TODO: weighted average of layer properties
+        # TODO: weighted average of connection properties where connections overlap
+
+        keep_pop = self.find_population(to_keep)
+        merge_pop = self.find_population(to_merge)
+
+        projections_to_drop = []
+
+        for projection in self.projections:
+            if projection.termination.name == to_merge:
+                if projection.origin.name == to_keep: # don't need projection between merged populations
+                    projections_to_drop.append(projection)
+                elif self.find_projection(projection.origin.name, keep_pop.name): # new projection already exists
+                    projections_to_drop.append(projection)
+                else:
+                    projection.termination = keep_pop
+
+            if projection.origin.name == to_merge:
+                if projection.termination.name == to_keep:
+                    projections_to_drop.append(projection)
+                elif self.find_projection(keep_pop.name, projection.termination.name):
+                    projections_to_drop.append(projection)
+                else:
+                    projection.origin = keep_pop
+
+        for projection in projections_to_drop:
+            self.projections.remove(projection)
+
+        self.populations.remove(merge_pop)
+
 
 def get_example_system():
     result = System()

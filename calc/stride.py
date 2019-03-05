@@ -21,8 +21,10 @@ result. The algorithm is as follows:
 Note this code assumes the network has a single input.
 """
 
+import copy
 import numpy as np
 import networkx as nx
+import cvxpy as cp
 import calc.system, calc.network
 from calc.data import areas_FV91, E07
 
@@ -53,6 +55,40 @@ def get_stride_pattern(system, max_cumulative_stride=512, best_of=10):
             first_few.append(candidate)
 
     return best_pattern, distances, first_few
+
+
+def get_collapsed_stride_pattern(system, max_cumulative_stride=512, best_of=10):
+    collapsed = copy.deepcopy(system)
+    collapse_cortical_layers(collapsed)
+
+    collapsed_candidate, distances, first_few = get_stride_pattern(collapsed,
+                                                         max_cumulative_stride=max_cumulative_stride,
+                                                         best_of=best_of)
+
+    candidate = StridePattern(system, max_cumulative_stride)
+
+    for i in range(len(system.projections)):
+        origin = system.projections[i].origin.name
+        termination = system.projections[i].termination.name
+
+        collapsed_origin = _get_collapsed_population(origin, collapsed)
+        collapsed_termination = _get_collapsed_population(termination, collapsed)
+
+        assert collapsed_origin is not None, 'No collapse found for {}'.format(origin)
+        assert collapsed_termination is not None, 'No collapse found for {}'.format(termination)
+
+        ind = collapsed.find_projection_index(collapsed_origin, collapsed_termination)
+        candidate.strides[i] = collapsed_candidate.strides[ind]
+
+
+def _get_collapsed_population(full_name, collapsed_system):
+    result = None
+    if collapsed_system.find_population(full_name):
+        result = full_name
+    elif '_' in full_name and collapsed_system.find_population(full_name.split()[0]):
+        result = full_name.split()[0]
+    return result
+    #TODO: special cases
 
 
 class StridePattern:
@@ -102,9 +138,13 @@ class StridePattern:
         for i in range(len(self.system.populations)):
             pop = self.system.populations[i]
             area = pop.name.split('_')[0]
+
+            if 'V2' in area: # set hints for V2thin, V2thick, V2pale
+                area = 'V2'
+
             if i == image_layer:
                 channels = image_channels
-            if pop.name in other_channels.keys():
+            elif pop.name in other_channels.keys():
                 channels = other_channels[pop.name]
             elif area in areas_FV91 and '2/3' in pop.name:
                 spine_count = e07.get_spine_count(area)
@@ -328,11 +368,131 @@ def initialize_network(system, candidate, image_layer=0, image_channels=3.):
     return net
 
 
+def collapse_cortical_layers(system):
+    """
+    Creates a simplified system without cortical layers. This simplifies search for stride patterns
+    if we assume interlaminar strides are 1.
+
+    :param system: system to simplify
+    :return: simplified system
+    """
+    merges = {}
+    for population in system.populations:
+        if '_' in population.name:
+            area, layer = population.name.split('_')
+            if layer == '2/3':
+                other_pops = []
+                for other_layer in ['4', '5', '6']:
+                    other_pop = system.find_population('{}_{}'.format(area, other_layer))
+                    if other_pop:
+                        other_pops.append(other_pop.name)
+                merges[population.name] = other_pops
+
+    for to_keep in merges.keys():
+        for to_merge in merges[to_keep]:
+            system.merge_populations(to_keep, to_merge)
+
+    system.merge_populations('V1_4B', 'V1_4Calpha')
+    system.merge_populations('V1_2/3blob', 'V1_4Cbeta')
+    system.merge_populations('V1_2/3blob', 'V1_5')
+    system.merge_populations('V1_2/3blob', 'V1_6')
+    system.merge_populations('V1_2/3blob', 'V1_2/3interblob')
+    # system.merge_populations('V1_2/3blob', 'V1_4B')
+
+    # for population in system.populations:
+    #     if population.name.endswith('2/3'):
+    #         population.name = population.name.split('_')[0]
+
+
+def solve(system):
+    # solver ECOS_BB: prob.solve(solver=cp.ECOS_BB)
+
+    stride_variables = []
+    for projection in system.projections:
+        stride_variables.append(cp.Variable(integer=True))
+
+    graph = system.make_graph()
+
+    cumulatives = []
+    for population in system.populations:
+        shortest = nx.shortest_path(graph, 'INPUT', population.name)
+        cumulative = 1
+        for j in range(1, len(shortest)):
+            ind = system.find_projection_index(shortest[j-1], shortest[j])
+            # print(system.projections[ind].get_description())
+            cumulative = cumulative * stride_variables[ind]
+        # print(cumulative)
+        cumulatives.append(cumulative)
+
+    hints = get_hints(system)
+
+    sse = 0
+    # for i in range(len(system.populations)):
+    # for i in range(6):
+    for i in [8]:
+        if hints[i] > 0:
+            print('{}: {}'.format(system.populations[i].name, hints[i]))
+            print(nx.shortest_path(graph, 'INPUT', system.populations[i].name))
+            sse = sse + (cumulatives[i] - hints[i]) ** 2
+
+    obj = cp.Minimize(sse)
+    prob = cp.Problem(obj)
+    prob.solve(solver=cp.ECOS_BB)
+    print("status:", prob.status)
+    print("optimal value", prob.value)
+    # print("optimal var", x.value, y.value)
+
+    # TODO: can we set up cost and constraints with matrices?
+    # TODO: constraint for each other input to each population to match pre-cumulative times stride
+
+
+def get_hints(system, image_layer=0, image_channels=3, V1_channels=130, other_channels={'parvo_LGN': 4, 'magno_LGN': 2, 'konio_LGN': 1}):
+    """
+    Return hints from physiology about cumulative strides in each layer. These are based on
+    the idea that the number of channels in a layer should scale with the density of spines on
+    basal dendrites (see rationale in paper).
+
+    :param image_layer: index of network layer that corresponds to input image
+    :param image_channels: number of channels in image (typically 3)
+    :param V1_channels: suggested number of channels in V1 layers (see rationale in paper)
+    :param other_channels: manual suggestions for subcortical channels
+    """
+
+    image_pixels = np.sqrt(system.populations[image_layer].n / image_channels)
+    cumulative_hints = np.zeros(len(system.populations))
+
+    e07 = E07()
+    V1_spine_count = e07.get_spine_count('V1')
+
+    for i in range(len(system.populations)):
+        pop = system.populations[i]
+        area = pop.name.split('_')[0]
+
+        if 'V2' in area: # set hints for V2thin, V2thick, V2pale
+            area = 'V2'
+
+        if i == image_layer:
+            channels = image_channels
+        elif pop.name in other_channels.keys():
+            channels = other_channels[pop.name]
+        elif area in areas_FV91 and '2/3' in pop.name:
+            spine_count = e07.get_spine_count(area)
+            channels = np.round(V1_channels * spine_count / V1_spine_count)
+        else:
+            channels = None
+
+        if channels:
+            pixels = np.sqrt(pop.n / channels)
+            cumulative_hints[i] = image_pixels / pixels
+
+    return cumulative_hints
+
+
 if __name__ == '__main__':
     from calc.examples.example_systems import make_big_system, miniaturize
     import pickle
 
-    if True:
+    if False:
         ventral_areas = ['V1', 'V2', 'V4', 'VOT', 'PITd', 'PITv', 'CITd', 'CITv', 'AITd', 'AITv']
         areas_to_include = 5
         system = make_big_system(ventral_areas[:areas_to_include])
@@ -340,16 +500,24 @@ if __name__ == '__main__':
         system.prune_FLNe(0.15)
         system.normalize_FLNe()
         system.check_connected()
-        filename = 'stride-pattern-{}.pkl'.format(ventral_areas[areas_to_include-1])
+        filename = 'stride-pattern-compact-{}.pkl'.format(ventral_areas[areas_to_include-1])
 
-    if False:
+    if True:
         system = make_big_system()
-        filename = 'stride-pattern-msh.pkl'
+        filename = 'stride-pattern-compact-msh.pkl'
+
+    collapse_cortical_layers(system)
+    system.print_description()
 
     candidate, distances, first_few = get_stride_pattern(system, best_of=1000)
-    with open(filename, 'wb') as file:
-        pickle.dump({'system': system, 'strides': candidate, 'distances': distances, 'first_few': first_few}, file)
-
-    for i in range(len(system.populations)):
-        print('{}: {} vs {}'.format(system.populations[i].name, candidate.cumulatives[i], candidate.cumulative_hints[i]))
+    print(min(distances))
+    import matplotlib.pyplot as plt
+    plt.hist(distances, 50)
+    plt.show()
+    #
+    # with open(filename, 'wb') as file:
+    #     pickle.dump({'system': system, 'strides': candidate, 'distances': distances, 'first_few': first_few}, file)
+    #
+    # for i in range(len(system.populations)):
+    #     print('{}: {} vs {}'.format(system.populations[i].name, candidate.cumulatives[i], candidate.cumulative_hints[i]))
 
