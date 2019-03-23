@@ -433,28 +433,35 @@ def plot_sparsity():
 def get_system(name):
     if name.lower() == 'macaque':
         system = make_big_system()
+        graph = system.make_graph()
 
-        name_order = ['INPUT', 'parvo_LGN', 'magno_LGN', 'konio_LGN', 'V1_4Calpha', 'V1_4Cbeta', 'V1_4B',
+        def get_in_degree(area):
+            result = graph.in_degree('{}_4'.format(area))
+            if result == {}:
+                raise RuntimeError(area)
+            else:
+                return result
+
+        name_order = ['INPUT', 'parvo_LGN', 'magno_LGN', 'konio_LGN',
+                'V1_4Calpha', 'V1_4Cbeta', 'V1_4B',
                 'V1_2/3blob', 'V1_2/3interblob', 'V1_5', 'V1_6',
-                'V2thick_2/3', 'V2thick_4', 'V2thick_5', 'V2thick_6',
-                'V2thin_2/3', 'V2thin_4', 'V2thin_5', 'V2thin_6',
-                'V2pale_2/3', 'V2pale_4', 'V2pale_5', 'V2pale_6',
-                'VP_2/3', 'VP_4', 'VP_5', 'VP_6', 'V3_2/3',
-                'V3_4', 'V3_5', 'V3_6', 'V3A_2/3', 'V3A_4', 'V3A_5', 'V3A_6', 'PIP_2/3', 'PIP_4', 'PIP_5', 'PIP_6',
-                'MT_2/3', 'MT_4', 'MT_5', 'MT_6', 'V4t_2/3', 'V4t_4', 'V4t_5', 'V4t_6', 'V4_2/3',
-                'V4_4', 'V4_5', 'V4_6', 'VOT_2/3', 'VOT_4', 'VOT_5', 'VOT_6', 'PO_2/3',
-                'PO_4', 'PO_5', 'PO_6', 'DP_2/3', 'DP_4', 'DP_5', 'DP_6', 'MSTd_2/3', 'MSTd_4', 'MSTd_5', 'MSTd_6',
-                'MIP_2/3', 'MIP_4', 'MIP_5', 'MIP_6', 'VIP_2/3', 'VIP_4', 'VIP_5', 'VIP_6', 'LIP_2/3',
-                'LIP_4', 'LIP_5', 'LIP_6', 'PITv_2/3', 'PITv_4', 'PITv_5', 'PITv_6', 'PITd_2/3', 'PITd_4', 'PITd_5', 'PITd_6',
-                'MSTl_2/3', 'MSTl_4', 'MSTl_5', 'MSTl_6',
-                'CITv_2/3', 'CITv_4', 'CITv_5', 'CITv_6', 'CITd_2/3', 'CITd_4', 'CITd_5', 'CITd_6', 'AITv_2/3',
-                'AITv_4', 'AITv_5', 'AITv_6', 'FST_2/3', 'FST_4', 'FST_5', 'FST_6', 'FEF_2/3', 'FEF_4', 'FEF_5', 'FEF_6',
-                '7a_2/3', '7a_4', '7a_5', '7a_6', 'STPp_2/3',
-                'STPp_4', 'STPp_5', 'STPp_6', 'STPa_2/3', 'STPa_4', 'STPa_5', 'STPa_6',
-                'AITd_2/3', 'AITd_4', 'AITd_5', 'AITd_6', '46_2/3', '46_4', '46_5', '46_6',
-                'TF_2/3', 'TF_4', 'TF_5', 'TF_6', 'TH_2/3', 'TH_4', 'TH_5', 'TH_6']
+                'V2thick_4', 'V2thick_2/3', 'V2thick_5', 'V2thick_6',
+                'V2thin_4', 'V2thin_2/3', 'V2thin_5', 'V2thin_6',
+                'V2pale_4', 'V2pale_2/3', 'V2pale_5', 'V2pale_6']
+
+        exclusions = ['MDP', '7b', '36']
+        for level in range(3, 11):
+            areas_this_level = []
+            for key in FV91_hierarchy.keys():
+                if FV91_hierarchy[key] == level and not key in exclusions:
+                    areas_this_level.append(key)
+
+            areas_this_level = sorted(areas_this_level, key=get_in_degree)
+            for area in areas_this_level:
+                for layer in ['4', '2/3', '5', '6']:
+                    name_order.append('{}_{}'.format(area, layer))
+
         populations = [system.find_population(name) for name in name_order]
-        # system.print_description()
 
         print([p.name for p in system.populations])
         assert len(system.populations) == len(populations), '{} {}'.format(len(system.populations), len(populations))
@@ -469,8 +476,8 @@ def get_system(name):
 def get_network(name):
     if name.lower() == 'macaque' or name == 'MSH': # load saved optimized network
         # filename = '../optimization-result-fixed-f.pkl'
-        # filename = 'optimization-result-msh-best.pkl'
-        filename = 'optimization-result-msh-0.pkl'
+        filename = 'optimization-result-msh-best.pkl'
+        # filename = 'optimization-result-msh-0.pkl'
         with open(filename, 'rb') as file:
             data = pickle.load(file)
         return data['net']
@@ -547,10 +554,10 @@ if __name__ == '__main__':
     # system = get_system('DenseNet121')
     # figsize=(9,9)
 
-    # system = get_system('macaque')
-    # network = get_network('macaque')
-    # figsize=(10,10)
-    # plot_FLNe(system, figsize=figsize, network=network)
+    system = get_system('macaque')
+    network = get_network('macaque')
+    figsize=(10,10)
+    plot_FLNe(system, figsize=figsize, network=network)
     # print(len(system.populations))
 
     # plot_population_sizes()
@@ -569,4 +576,4 @@ if __name__ == '__main__':
     # print(get_skip_lengths(macaque_system))
     # plot_sparsity()
 
-    count_parameters(get_network('Macaque'))
+    # count_parameters(get_network('Macaque'))

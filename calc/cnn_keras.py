@@ -1,9 +1,12 @@
 import random
 import copy
 import numpy as np
+import pickle
 import keras
-from keras.layers import Conv2D, Activation, BatchNormalization, Lambda
+from keras.layers import Conv2D, Activation, BatchNormalization, Lambda, Dropout
 from keras.constraints import Constraint
+from keras.initializers import VarianceScaling
+from keras.regularizers import l2
 from keras import backend as K
 
 
@@ -196,7 +199,9 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
     """
 
     input_name = 'INPUT'
+    # dropout_layer = Dropout(0.5)(input)
     complete_layers = {input_name: input}
+    kernel_masks = {}
 
     # print(len(complete_layers))
     # print(complete_layers)
@@ -236,25 +241,44 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
                             ml = get_map_list(input_layer) #TODO: build a single list that's shared across connections
                             subsampled = get_map_concatenation(ml, subsample_indices[inbound_index])
 
+                            kernel_constraint = SparsityConstraint()
+                            kernel_constraint.set_mask((w, w), m, len(subsample_indices[inbound_index]), inbound.sigma)
+                            kernel_masks[name] = kernel_constraint.non_zero
                             conv_layer = Conv2D(m, (w, w), strides=(s, s), padding='same', name=name,
-                                                kernel_constraint=SparsityConstraint((w, w), m, len(subsample_indices[inbound_index]), inbound.sigma)
+                                                kernel_constraint=kernel_constraint,
+                                                kernel_initializer=scaled_glorot(inbound.sigma),
+                                                kernel_regularizer=l2(0.000001),
                                                 )(subsampled)
-                            # conv_layer = Conv2D(m, (w, w), strides=(s, s), padding='same', name=name)(subsampled)
                             conv_layers.append(conv_layer)
 
                     if len(conv_layers) > 1:
-                        # print('adding converging paths')
                         x = keras.layers.add(conv_layers)
                     else:
                         x = conv_layers[0]
 
-                    x = Activation('relu')(x)
                     x = BatchNormalization()(x)
+                    x = Activation('relu')(x)
+                    x = Dropout(.01)(x)
+
                     complete_layers[layer.name] = x
 
                     print("adding " + layer.name)
 
+    with open('kernel_masks.pkl', 'wb') as file:
+        pickle.dump(kernel_masks, file)
+
     return complete_layers[output_name]
+
+
+def scaled_glorot(sigma):
+    """
+    :param sigma: pixel-wise kernel sparseness parameter
+    :return: Keras glorot_uniform initializer scaled as 1/sigma
+    """
+    return VarianceScaling(scale=1./sigma**.5,
+                           mode='fan_avg',
+                           distribution='uniform',
+                           seed=None)
 
 
 def test_subsample_of_non_continuous_maps():
@@ -280,7 +304,12 @@ class SparsityConstraint(Constraint):
     Maintains kernel sparseness by resetting some entries to 0 at each step.
     """
 
-    def __init__(self, kernel_shape, post_maps, pre_maps, sigma):
+    def __init__(self):
+        self.non_zero = None
+        self.mask = None
+        # self.description = 'kernel: {} pre_maps: {} maps: {}'.format(kernel_shape, pre_maps, post_maps)
+
+    def set_mask(self, kernel_shape, post_maps, pre_maps, sigma):
         """
         :param kernel_shape: kernel shape (width, height)
         :param post_maps: number of postsynaptic feature maps
@@ -289,12 +318,11 @@ class SparsityConstraint(Constraint):
         """
         self.non_zero = (np.random.rand(kernel_shape[0], kernel_shape[1], pre_maps, post_maps) <= sigma)
         self.mask = K.constant(1 * self.non_zero)
-        # self.description = 'kernel: {} pre_maps: {} maps: {}'.format(kernel_shape, pre_maps, post_maps)
 
     def __call__(self, w):
         # print(self.description)
-        print(w.shape)
-        print(self.mask.shape)
+        # print(w.shape)
+        # print(self.mask.shape)
         return self.mask * w
 
 
