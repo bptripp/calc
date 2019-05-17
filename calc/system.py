@@ -150,6 +150,7 @@ class System:
 
     def find_projection_index(self, origin_name, termination_name):
         assert isinstance(termination_name, str)
+        result = None
         for i in range(len(self.projections)):
             projection = self.projections[i]
             if projection.origin.name == origin_name and projection.termination.name == termination_name:
@@ -201,6 +202,8 @@ class System:
 
         def keep(projection):
             if isinstance(projection, InterAreaProjection) and projection.f < min_fraction:
+                print('Pruning sparse projection {}->{} {}'.format(
+                    projection.origin.name, projection.termination.name, projection.f))
                 return False
             else:
                 return True

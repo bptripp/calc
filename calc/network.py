@@ -1,4 +1,6 @@
 # TODO: consider changing w -> w_k and width -> w_map
+import networkx as nx
+import numpy as np
 
 class Layer:
     def __init__(self, name, m, width):
@@ -28,6 +30,9 @@ class Connection:
         self.s = s
         self.w = w
         self.sigma = sigma
+
+    def get_name(self):
+        return '{}->{}'.format(self.pre.name, self.post.name)
 
 
 class Network:
@@ -102,4 +107,70 @@ class Network:
             if connection.pre.name == layer_name:
                 result.append(connection)
         return result
+
+    def remove_layer(self, name):
+        for connection in self.find_inbounds(name):
+            self.remove_connection(connection.pre.name, connection.post.name)
+
+        for connection in self.find_outbounds(name):
+            self.remove_connection(connection.pre.name, connection.post.name)
+
+        index = self.find_layer_index(name)
+        del self.layers[index]
+
+    def remove_connection(self, pre_name, post_name):
+        index = self.find_connection_index(pre_name, post_name)
+        del self.connections[index]
+
+    def make_graph(self):
+        graph = nx.DiGraph()
+
+        for layer in self.layers:
+            graph.add_node(layer.name)
+
+        for connection in self.connections:
+            graph.add_edge(connection.pre.name, connection.post.name)
+
+        return graph
+
+    def prune_dead_ends(self, output_layers):
+        graph = self.make_graph()
+
+        # keep = []
+        remove = []
+        for layer in self.layers:
+            path_exists_to_output = False
+            for output in output_layers:
+                if nx.has_path(graph, layer.name, output):
+                    path_exists_to_output = True
+                    break
+            # keep.append(path_exists_to_output)
+            if not path_exists_to_output:
+                remove.append(layer.name)
+                print('Pruning {}'.format(layer.name))
+
+        removed_indices = []
+        for layer_name in remove:
+            removed_indices.append(self.find_layer_index(layer_name))
+
+        for layer_name in remove:
+                self.remove_layer(layer_name)
+
+        return removed_indices
+
+    def scale_c(self, factor):
+        """
+        Scales all c parameters in log space.
+        :param factor factor to scale by
+        """
+        for connection in self.connections:
+            connection.c = np.exp(np.log(connection.c)*factor)
+
+    def scale_sigma(self, factor):
+        """
+        Scales all sigma parameters in log space.
+        :param factor factor to scale by
+        """
+        for connection in self.connections:
+            connection.sigma = np.exp(np.log(connection.sigma)*factor)
 
