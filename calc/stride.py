@@ -27,6 +27,7 @@ import networkx as nx
 import cvxpy as cp
 import calc.system, calc.network
 from calc.data import areas_FV91, E07
+from calc.system import InterLaminarProjection, InterAreaProjection
 
 
 def get_stride_pattern(system, max_cumulative_stride=512, best_of=10):
@@ -404,6 +405,55 @@ def collapse_cortical_layers(system):
     #         population.name = population.name.split('_')[0]
 
 
+def expand_strides(collapsed_system, collapsed_strides, full_system):
+    """
+    Expands stride pattern from collapsed system to full system
+    by using stride=1 for interlaminar connections.
+
+    :param collapsed_system: from collapse_cortical_layers
+    :param collapsed_strides: a StridePattern for the collapsed system
+    :param full_system: non-collapsed system (with distinct cortical layers
+    :return: a StridePattern for the full_system based on collapsed_strides
+    """
+
+    def collapsed_name(name):
+        if name in ['V1_4Calpha', 'V1_4B']:
+            return 'V1_4B'
+        elif name in ['V1_2/3blob', 'V1_4Cbeta', 'V1_5', 'V1_6', 'V1_2/3interblob']:
+            return 'V1_2/3blob'
+        else:
+            return name.replace('_4', '_2/3').replace('_5', '_2/3').replace('_6', '_2/3')
+
+    full_strides = StridePattern(full_system, 512)
+    for i in range(len(full_system.projections)):
+        projection = full_system.projections[i]
+
+        if isinstance(projection, InterLaminarProjection):
+            full_strides.strides[i] = 1
+        else:
+            # print('{}->{}'.format(projection.origin.name, projection.termination.name))
+            pre_name = collapsed_name(projection.origin.name)
+            post_name = collapsed_name(projection.termination.name)
+            # print('{}->{}'.format(pre_name, post_name))
+            ind = collapsed_system.find_projection_index(pre_name, post_name)
+            full_strides.strides[i] = collapsed_strides.strides[ind]
+
+    # fill in cumulative strides
+    done = False
+    while not done:
+        done = True
+        for i in range(len(full_system.projections)):
+            projection = full_system.projections[i]
+            pre_ind = full_system.find_population_index(projection.origin.name)
+            post_ind = full_system.find_population_index(projection.termination.name)
+            if full_strides.cumulatives[pre_ind] is None:
+                done = False
+            elif full_strides.cumulatives[post_ind] is None:
+                full_strides.cumulatives[post_ind] = full_strides.cumulatives[pre_ind] * full_strides.strides[i]
+
+    return full_strides
+
+
 def solve(system):
     # solver ECOS_BB: prob.solve(solver=cp.ECOS_BB)
 
@@ -492,17 +542,22 @@ if __name__ == '__main__':
     from calc.examples.example_systems import make_big_system, miniaturize
     import pickle
 
-    if False:
-        ventral_areas = ['V1', 'V2', 'V4', 'VOT', 'PITd', 'PITv', 'CITd', 'CITv', 'AITd', 'AITv']
-        areas_to_include = 5
+    ventral_areas = ['V1', 'V2', 'V4', 'VOT', 'PITd', 'PITv', 'CITd', 'CITv', 'AITd', 'AITv']
+
+    def make_ventral_system(areas_to_include=6):
         system = make_big_system(ventral_areas[:areas_to_include])
         miniaturize(system, factor=10)
-        system.prune_FLNe(0.15)
+        system.prune_FLNe(0.05)
         system.normalize_FLNe()
         system.check_connected()
-        filename = 'stride-pattern-compact-{}.pkl'.format(ventral_areas[areas_to_include-1])
+        return system
 
-    if True:
+    ventral = True
+    if ventral:
+        areas_to_include=6
+        system = make_ventral_system(areas_to_include=areas_to_include)
+        filename = 'stride-pattern-compact-{}.pkl'.format(ventral_areas[areas_to_include-1])
+    else:
         system = make_big_system()
         filename = 'stride-pattern-compact-msh.pkl'
 
@@ -510,14 +565,24 @@ if __name__ == '__main__':
     system.print_description()
 
     candidate, distances, first_few = get_stride_pattern(system, best_of=1000)
-    print(min(distances))
-    import matplotlib.pyplot as plt
-    plt.hist(distances, 50)
-    plt.show()
-    #
-    # with open(filename, 'wb') as file:
-    #     pickle.dump({'system': system, 'strides': candidate, 'distances': distances, 'first_few': first_few}, file)
-    #
-    # for i in range(len(system.populations)):
-    #     print('{}: {} vs {}'.format(system.populations[i].name, candidate.cumulatives[i], candidate.cumulative_hints[i]))
+    # candidate, distances, first_few = get_stride_pattern(system, best_of=10)
+
+    # print(min(distances))
+    # import matplotlib.pyplot as plt
+    # plt.hist(distances, 50)
+    # plt.show()
+
+    if ventral:
+        full_system = make_ventral_system(areas_to_include=areas_to_include)
+    else:
+        full_system = make_big_system()
+
+    full_strides = expand_strides(system, candidate, full_system)
+
+    with open(filename, 'wb') as file:
+        # pickle.dump({'system': system, 'strides': candidate, 'distances': distances, 'first_few': first_few}, file)
+        pickle.dump({'system': full_system, 'strides': full_strides, 'distances': distances, 'first_few': first_few}, file)
+
+    for i in range(len(system.populations)):
+        print('{}: {} vs {}'.format(system.populations[i].name, candidate.cumulatives[i], candidate.cumulative_hints[i]))
 
