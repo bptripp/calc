@@ -4,6 +4,8 @@ import pickle
 import keras
 from keras import applications
 import numpy as np
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from calc.system import System, InterAreaProjection
 from calc.network import Network
@@ -20,8 +22,8 @@ def plot_FLNe(system, figsize=(8,6), network=None):
     layers = []
     for pop in system.populations:
         layer = pop.name.split('-')[0]
-        if layer == 'Conv2D':
-            layer = ''
+        # if layer == 'Conv2D':
+        #     layer = ''
         if '_2/3' in layer and not 'interblob' in layer or '_5' in layer or '_6' in layer:
             layer = ''
         if layer == 'parvo_LGN' or layer == 'konio_LGN' or layer == 'V1_4Cbeta':
@@ -51,8 +53,9 @@ def plot_FLNe(system, figsize=(8,6), network=None):
                 print(network.connections[index].c)
                 FLNe[i, j] = projection.origin.n * network.connections[index].c
 
-
+    # figsize = [2*f for f in figsize]
     fig, ax = plt.subplots(figsize=figsize)
+    ax.imshow(np.ones((FLNe.shape[0], FLNe.shape[1], 4))) # this makes background white in .eps
     im = ax.imshow(np.log10(FLNe), vmin=np.log10(.000001), vmax=0)
     ax.set_xticks(np.arange(len(layers)))
     ax.set_yticks(np.arange(len(layers)))
@@ -66,8 +69,10 @@ def plot_FLNe(system, figsize=(8,6), network=None):
     cbar.ax.tick_params(labelsize=8)
 
     fig.tight_layout()
-    plt.savefig('visualization-FLNe.pdf')
-    plt.show()
+    # ax.set_rasterized(True)
+    # plt.savefig('visualization-FLNe.pdf')
+    plt.savefig('visualization-FLNe.eps')
+    # plt.show()
 
 
 def plot_population_sizes():
@@ -477,6 +482,7 @@ def get_network(name):
     if name.lower() == 'macaque' or name == 'MSH': # load saved optimized network
         # filename = '../optimization-result-fixed-f.pkl'
         filename = 'optimization-result-msh-best.pkl'
+        # filename = 'optimization-result-msh-best-2.pkl'
         # filename = 'optimization-result-msh-0.pkl'
         with open(filename, 'rb') as file:
             data = pickle.load(file)
@@ -549,15 +555,20 @@ if __name__ == '__main__':
     # figsize=(8,8)
     # system = get_system('ResNet50')
     # figsize=(7,7)
-    # system = get_system('VGG-16')
-    # figsize=(4,4)
+    system = get_system('VGG-16')
+    figsize=(4,4)
     # system = get_system('DenseNet121')
-    # figsize=(9,9)
+    # figsize=(8,8)
+    plot_FLNe(system, figsize=figsize)
 
-    system = get_system('macaque')
-    network = get_network('macaque')
-    figsize=(10,10)
-    plot_FLNe(system, figsize=figsize, network=network)
+    # system = get_system('macaque')
+    # network = get_network('macaque')
+    #
+    # system.print_description()
+    # network.print()
+
+    # figsize=(10,10)
+    # plot_FLNe(system, figsize=figsize, network=network)
     # print(len(system.populations))
 
     # plot_population_sizes()
