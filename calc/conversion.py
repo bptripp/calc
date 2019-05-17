@@ -415,6 +415,13 @@ class Cost:
         """
         return kappa * bounds(self.network.w, min_bound=1.)
 
+    def w_rf_constraint_cost(self, kappa):
+        """
+        :param kappa: weight relative to other costs
+        :return: Cost for soft constraint w_rf <= 90 degrees
+        """
+        return kappa * bounds(self.network.w_rf, max_bound=90.)
+
     def compare_system(self, system, sess):
         """
         Prints comparison of system target properties with properties calculated from network.

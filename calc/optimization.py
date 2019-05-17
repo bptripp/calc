@@ -61,8 +61,9 @@ def optimize_network_architecture(system, stride_pattern=None, compare=True):
     wc = cost.match_cost_w(1.)
     dec = cost.dead_end_cost(1.)
     kc = cost.w_k_constraint_cost(1.)
+    rfc = cost.w_rf_constraint_cost(1.)
 
-    c = fc + bc + ec + wc + dec + kc
+    c = fc + bc + ec + wc + dec + 5*kc + 5*rfc
 
     vars = []
     vars.extend(cost.network.c)
@@ -92,7 +93,7 @@ def optimize_network_architecture(system, stride_pattern=None, compare=True):
         _print_cost(c_value, sess.run(fc), sess.run(bc), sess.run(ec), sess.run(wc), sess.run(dec))
 
         iterations = 100
-        for i in range(1001):
+        for i in range(2001):
             _run_optimization_steps(sess, opt_op, iterations=iterations, clip_ops=clip_ops)
             cost_i = sess.run(c)
             training_curve.append((iterations*i, cost_i, sess.run(dec), sess.run(kc)))
