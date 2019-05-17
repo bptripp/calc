@@ -19,7 +19,7 @@ def add_areas(system, cortical_areas):
 
                 n = _get_num_ff_neurons(area, layer)
                 e = data.get_extrinsic_inputs(area, layer) if layer == '4' else None
-                w = data.get_receptive_field_size(area) if layer == '2/3' else None
+                w = data.get_receptive_field_size(area) if layer == '4' else None
 
                 system.add(name, n, e, w)
 
@@ -166,12 +166,10 @@ def make_big_system(cortical_areas=None):
 
         e = data.get_extrinsic_inputs('V1', '4') if layer.startswith('4C') else None
 
-        if '2/3' in layer:
-            # Livingston & Hubel (1988) cite Livingston & Hubel (1984) re larger RF sizes in blobs
-            # than interblobs, but I can't find anything about this in the 1984 paper (or elsewhere).
+        # Livingston & Hubel (1988) cite Livingston & Hubel (1984) re larger RF sizes in blobs
+        # than interblobs, but I can't find anything about this in the 1984 paper (or elsewhere).
+        if '4C' in layer:
             w = data.get_receptive_field_size('V1')
-        elif layer == '4B':
-            w = 1.1 * data.get_receptive_field_size('V1')  # TODO: get better estimate from Gilbert
         else:
             w = None
         system.add('V1_{}'.format(layer), n, e, w)
@@ -204,7 +202,7 @@ def make_big_system(cortical_areas=None):
             n = n/5 if 'thin' in area else 2*n/5
 
             e = data.get_extrinsic_inputs('V2', '4') if layer == '4' else None
-            w = data.get_receptive_field_size('V2') if layer == '2/3' else None
+            w = data.get_receptive_field_size('V2') if layer == '4' else None
 
             system.add(name, n, e, w)
 
@@ -311,8 +309,10 @@ if __name__ == '__main__':
 
     # stride_file = 'stride-pattern-PITd.pkl'
     # result_file = 'optimization-result-PITd.pkl'
-    stride_file = 'stride-pattern-msh.pkl'
-    result_file = 'optimization-result-msh.pkl'
+    stride_file = 'stride-pattern-compact-PITv.pkl'
+    result_file = 'optimization-result-PITv.pkl'
+    # stride_file = 'stride-pattern-msh.pkl'
+    # result_file = 'optimization-result-msh.pkl'
 
     with open(stride_file, 'rb') as file:
         data = pickle.load(file)
