@@ -175,7 +175,7 @@ def get_map_concatenation(map_list, indices):
     else:
         short_list = []
         for index in indices:
-            # print('index: {} map_list size: {}'.format(index, len(map_list)))
+            print('index: {} map_list size: {}'.format(index, len(map_list)))
             short_list.append(map_list[index])
         return keras.layers.concatenate(short_list)
 
@@ -201,8 +201,9 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
     input_name = 'INPUT'
     # dropout_layer = Dropout(0.5)(input)
     complete_layers = {input_name: input}
-    kernel_masks = {}
+    # kernel_masks = {}
 
+    sparse_layers = []
     # print(len(complete_layers))
     # print(complete_layers)
 
@@ -234,22 +235,25 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
 
                         name = '{}-{}'.format(inbound.pre.name, layer.name)
                         input_layer = complete_layers[inbound.pre.name]
-                        print('connecting {}'.format(name))
+                        print('connecting {} c: {} sigma: {}'.format(name, inbound.c, inbound.sigma))
 
-                        print('subsample indices: {}'.format(subsample_indices[inbound_index]))
+                        # print('subsample indices: {}'.format(subsample_indices[inbound_index]))
                         if len(subsample_indices[inbound_index]) > 0:
                             ml = get_map_list(input_layer) #TODO: build a single list that's shared across connections
+                            print('{} of {}'.format(inbound_index, len(subsample_indices)))
                             subsampled = get_map_concatenation(ml, subsample_indices[inbound_index])
 
-                            kernel_constraint = SparsityConstraint()
-                            kernel_constraint.set_mask((w, w), m, len(subsample_indices[inbound_index]), inbound.sigma)
-                            kernel_masks[name] = kernel_constraint.non_zero
+                            kernel_constraint = SparsityConstraint(inbound.sigma)
+                            # kernel_constraint.set_random_mask((w, w), m, len(subsample_indices[inbound_index]))
+                            # kernel_masks[name] = kernel_constraint.non_zero
                             conv_layer = Conv2D(m, (w, w), strides=(s, s), padding='same', name=name,
                                                 kernel_constraint=kernel_constraint,
                                                 kernel_initializer=scaled_glorot(inbound.sigma),
                                                 kernel_regularizer=l2(0.000001),
-                                                )(subsampled)
-                            conv_layers.append(conv_layer)
+                                                )
+                            conv_outputs = conv_layer(subsampled)
+                            conv_layers.append(conv_outputs) #TODO: clean up names
+                            sparse_layers.append(conv_layer)
 
                     if len(conv_layers) > 1:
                         x = keras.layers.add(conv_layers)
@@ -258,16 +262,43 @@ def make_model_from_network(net, input, output_name, subsample_indices=None):
 
                     x = BatchNormalization()(x)
                     x = Activation('relu')(x)
-                    x = Dropout(.01)(x)
+                    # x = Dropout(.032)(x)
 
                     complete_layers[layer.name] = x
 
                     print("adding " + layer.name)
 
-    with open('kernel_masks.pkl', 'wb') as file:
-        pickle.dump(kernel_masks, file)
+    # with open('kernel_masks.pkl', 'wb') as file:
+    #     pickle.dump(kernel_masks, file)
 
-    return complete_layers[output_name]
+    return complete_layers[output_name], sparse_layers
+
+
+def snip(sparse_layers, model, inputs, outputs):
+    weights = [layer.kernel for layer in sparse_layers]
+
+    # gradients = keras.backend.gradients(loss, variables)
+    # print(gradients)
+    # weights = model.trainable_weights
+    # input_tensors = model.inputs + model.sample_weights + model.targets + [K.learning_phase()]
+
+    gradients = model.optimizer.get_gradients(model.total_loss, weights)
+    # input_tensors = model.inputs + model.targets
+    # get_gradients = K.function(inputs=input_tensors, outputs=gradients)
+    # get_weights = K.function(inputs=input_tensors, outputs=weights)
+
+    # g = get_gradients(batch) #TODO
+    # w = get_weights(batch)
+
+    symb_inputs = (model._feed_inputs + model._feed_targets + model._feed_sample_weights)
+    x, y, sample_weight = model._standardize_user_data(inputs, outputs)
+
+    f = K.function(symb_inputs, gradients)
+    g = f(x + y + sample_weight)
+
+    w = [layer.get_weights()[0] for layer in sparse_layers]
+    for i in range(len(w)):
+        sparse_layers[i].kernel_constraint.set_snip_mask(w[i], g[i])
 
 
 def scaled_glorot(sigma):
@@ -302,22 +333,38 @@ def test_subsample_of_non_continuous_maps():
 class SparsityConstraint(Constraint):
     """
     Maintains kernel sparseness by resetting some entries to 0 at each step.
+
+    :param sigma: weight-level sparsity parameter (fraction non-zero elements)
     """
 
-    def __init__(self):
+    def __init__(self, sigma):
         self.non_zero = None
         self.mask = None
+        self.sigma = sigma
         # self.description = 'kernel: {} pre_maps: {} maps: {}'.format(kernel_shape, pre_maps, post_maps)
 
-    def set_mask(self, kernel_shape, post_maps, pre_maps, sigma):
+    def set_random_mask(self, kernel_shape, post_maps, pre_maps):
         """
         :param kernel_shape: kernel shape (width, height)
         :param post_maps: number of postsynaptic feature maps
         :param pre_maps: number of presynaptic feature maps
         :param sigma: weight-level sparsity parameter (fraction non-zero elements)
         """
-        self.non_zero = (np.random.rand(kernel_shape[0], kernel_shape[1], pre_maps, post_maps) <= sigma)
+        self.non_zero = (np.random.rand(kernel_shape[0], kernel_shape[1], pre_maps, post_maps) <= self.sigma)
         self.mask = K.constant(1 * self.non_zero)
+
+    def set_snip_mask(self, weights, gradients):
+        """
+        Sets mask according to the SNIP sparsification method (Lee et al., 2019, ICLR).
+
+        :param weights: kernel weights
+        :param gradients: gradients of loss (sampled from some batch) wrt weights
+        """
+        absolute_sensitivities = np.abs(weights * gradients)
+        n_to_keep = int(absolute_sensitivities.size * self.sigma)
+
+        threshold = np.sort(absolute_sensitivities.flatten())[-n_to_keep]
+        self.mask = K.constant(absolute_sensitivities >= threshold)
 
     def __call__(self, w):
         # print(self.description)
