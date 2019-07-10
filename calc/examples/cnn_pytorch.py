@@ -18,7 +18,7 @@ import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as transforms
 
-from util import subsample_maps, prune_maps, prune_layers, prune_connections
+from calc.examples.util import subsample_maps, prune_maps, prune_layers, prune_connections
 
 
 class Backbone(nn.Module):
