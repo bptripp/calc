@@ -117,13 +117,14 @@ def build_model(optimization_result_file, last_conv_layer, save=True, c_scale=1,
 
     output_layer, sparse_layers = make_model_from_network(net, input, last_conv_layer, subsample_indices=subsample_indices)
 
-    x = Conv2D(100, (1,1))(output_layer)
+    x = Conv2D(64, (1,1))(output_layer)
     x = BatchNormalization()(x)
     x = Activation('relu')(x)
     x = Flatten()(x)
     x = Dense(512, activation='relu')(x)
     x = Dropout(0.5)(x)
-    x = Dense(256, activation='relu')(x)
+    x = Dense(512, activation='relu')(x)
+    x = Dropout(0.25)(x)
     x = Dense(10, activation='softmax')(x)
     model = keras.Model(inputs=input, outputs=x)
 
@@ -174,7 +175,7 @@ if __name__ == '__main__':
 
     batch_size = 32
     num_classes = 10
-    epochs = 1000
+    epochs = 50
     data_augmentation = True
     # num_predictions = 20
     save_dir = os.path.join(os.getcwd(), 'saved_models')
@@ -257,6 +258,9 @@ if __name__ == '__main__':
     model_path = os.path.join(save_dir, model_name)
     model.save(model_path)
     print('Saved trained model at %s ' % model_path)
+
+    with open('model.pkl', 'wb') as file:
+        pickle.dump(model, file)
 
     # Score trained model.
     scores = model.evaluate(x_test, y_test, verbose=1)

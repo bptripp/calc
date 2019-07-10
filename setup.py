@@ -9,6 +9,6 @@ setup(
     license = "BSD",
     keywords = "primate vision convolutional network",
     url = "https://github.com/bptripp/calc",
-    packages=['calc'],
+    packages=['calc', 'calc.examples'],
 )
 

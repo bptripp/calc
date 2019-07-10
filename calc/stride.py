@@ -547,14 +547,14 @@ if __name__ == '__main__':
     def make_ventral_system(areas_to_include=6):
         system = make_big_system(ventral_areas[:areas_to_include])
         miniaturize(system, factor=10)
-        system.prune_FLNe(0.05)
+        system.prune_FLNe(0.02)
         system.normalize_FLNe()
         system.check_connected()
         return system
 
     ventral = True
     if ventral:
-        areas_to_include=6
+        areas_to_include=10
         system = make_ventral_system(areas_to_include=areas_to_include)
         filename = 'stride-pattern-compact-{}.pkl'.format(ventral_areas[areas_to_include-1])
     else:
@@ -564,7 +564,7 @@ if __name__ == '__main__':
     collapse_cortical_layers(system)
     system.print_description()
 
-    candidate, distances, first_few = get_stride_pattern(system, best_of=1000)
+    candidate, distances, first_few = get_stride_pattern(system, best_of=5000)
     # candidate, distances, first_few = get_stride_pattern(system, best_of=10)
 
     # print(min(distances))

@@ -309,8 +309,10 @@ if __name__ == '__main__':
 
     # stride_file = 'stride-pattern-PITd.pkl'
     # result_file = 'optimization-result-PITd.pkl'
-    stride_file = 'stride-pattern-compact-PITv.pkl'
-    result_file = 'optimization-result-PITv.pkl'
+    # stride_file = 'stride-pattern-compact-PITv.pkl'
+    # result_file = 'optimization-result-PITv.pkl'
+    stride_file = 'stride-pattern-compact-AITv.pkl'
+    result_file = 'optimization-result-AITv.pkl'
     # stride_file = 'stride-pattern-msh.pkl'
     # result_file = 'optimization-result-msh.pkl'
 
