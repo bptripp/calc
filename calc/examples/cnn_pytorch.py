@@ -1,14 +1,10 @@
 """
-For building a PyTorch model from a CALC Network.
+Builds a PyTorch model from a CALC Network.
 """
 
-# MAYBE: create, save & reload, compare Keras model
-# DONE: subsample view
-# DONE: SNIP
-# DONE: sparsity constraint
-# TODO later: scaled Glorot
-# DONE: use nn.ModuleList instead of setattr
+# TODO: scaled Glorot
 
+import copy
 import pickle
 import numpy as np
 import networkx as nx
@@ -18,22 +14,26 @@ import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as transforms
 
-from calc.examples.util import subsample_maps, prune_maps, prune_layers, prune_connections
-
 
 class Backbone(nn.Module):
-    def __init__(self, network, output, c_scale=1.0, sigma_scale=1.0, random_seed=1):
+    """
+    A network that is modelled on part of primate visual cortex.
+    """
+
+    def __init__(self, network, layer_names, output, c_scale=1.0, sigma_scale=1.0, random_seed=1):
         super(Backbone, self).__init__()
 
         np.random.seed(seed=random_seed)
         subsample_indices = preprocess(network, c_scale, sigma_scale, output)
 
-        graph = network.make_graph()
-        self.layer_names = [name for name in nx.topological_sort(graph)]
+        self.layer_names = layer_names
+        # graph = network.make_graph()
+        # self.layer_names = [name for name in nx.topological_sort(graph)]
         self._output_index = self.layer_names.index(output)
 
         self.bns = nn.ModuleList()
         self.inbound_connection_inds = []
+        print(self.layer_names)
         for layer_name in self.layer_names:
             layer = network.find_layer(layer_name)
             self.bns.append(nn.BatchNorm2d(layer.m))
@@ -45,7 +45,6 @@ class Backbone(nn.Module):
         self.masks = nn.ModuleList()
         self.convs = nn.ModuleList()
         self.pre_layer_inds = []
-        # self.subsample_indices = []
         self.subsample_indices = nn.ParameterList()
         for i, connection in enumerate(network.connections):
             self.sigmas.append(connection.sigma)
@@ -54,7 +53,6 @@ class Backbone(nn.Module):
             conv = nn.Conv2d(input_channels, connection.post.m, connection.w, connection.s, padding=padding)
             self.convs.append(conv)
             self.pre_layer_inds.append(self.layer_names.index(connection.pre.name))
-            # self.subsample_indices.append(torch.LongTensor(subsample_indices[i]))
             self.subsample_indices.append(nn.Parameter(torch.LongTensor(subsample_indices[i]), requires_grad=False))
 
     def keep_sparse(self):
@@ -77,13 +75,8 @@ class Backbone(nn.Module):
                     input = activities[pre_layer_ind].index_select(1, sub_ind)
                     components.append(conv(input))
 
-                # print('******')
-                # for component in components:
-                #     print(component.shape)
-
                 x = torch.stack(components).mean(dim=0)
                 bn = self.bns[i]
-                # bn = getattr(self, _bn_name(layer_name))
                 x = F.relu(bn(x))
                 activities.append(x)
 
@@ -102,16 +95,10 @@ class Backbone(nn.Module):
             pre_index = self.pre_layer_inds[i]
             post_index = find_post_index(i)
 
-
             c = self.convs[i].weight.shape[1] / len(self.bns[pre_index].weight)
             n_zeros = np.sum((self.convs[i].weight == 0).numpy())
             n_elements = np.prod(self.convs[i].weight.shape)
 
-            # print(self.convs[i].weight.shape)
-            # w = self.convs[i].weight.shape[2]
-            # print(w)
-
-            # print('zeros: {}/{}'.format(n_zeros, n_elements))
             print('{}->{} c={:.6} sigma={:.6} stride={} w={}'.format(
                 self.layer_names[pre_index],
                 self.layer_names[post_index],
@@ -122,9 +109,9 @@ class Backbone(nn.Module):
             ))
 
 
-class Classifier(nn.Module):
+class Cifar10Classifier(nn.Module):
     def __init__(self, backbone):
-        super(Classifier, self).__init__()
+        super(Cifar10Classifier, self).__init__()
 
         self.backbone = backbone
         backbone_channels = backbone.forward(torch.Tensor(np.random.randn(2, 3, 32, 32))).shape[1]
@@ -139,7 +126,6 @@ class Classifier(nn.Module):
         self.linear2 = nn.Linear(512, 512)
         self.drop2 = nn.Dropout(.25)
         self.classifier = nn.Linear(512, 10) #TODO: from logits
-        # self.snip()
 
     def forward(self, x):
         x = self.backbone(x)
@@ -159,7 +145,8 @@ class Classifier(nn.Module):
             transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
         ])
 
-        testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
+        testset = torchvision.datasets.CIFAR10(
+            root='./data', train=False, download=True, transform=transform_test)
         testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=2)
 
         criterion = nn.CrossEntropyLoss()
@@ -206,19 +193,15 @@ class ImageNetClassifier(nn.Module):
         self.avg = nn.AvgPool2d(2)
         self.linear1 = nn.Linear(64*7*7, 2048) #change based on output size
         self.drop1 = nn.Dropout(.5)
-        # self.linear2 = nn.Linear(2048, 2048)
-        # self.drop2 = nn.Dropout(.25)
         self.classifier = nn.Linear(2048, 1000)
 
     def forward(self, x):
         x = self.backbone(x)
         x = F.relu(self.bn1(self.conv1(x)))
         x = self.avg(x)
-        x = x.view(x.size(0), -1) #[1 x 3136], m2: [64 x 2048]  # [1 x 12544], m2: [3136 x 2048]
+        x = x.view(x.size(0), -1)
         x = F.relu(self.linear1(x))
         x = self.drop1(x)
-        # x = F.relu(self.linear2(x))
-        # x = self.drop2(x)
         x = self.classifier(x)
         return x
 
@@ -227,6 +210,143 @@ def _get_padding(w):
     padding = (w - 1) / 2
     c = int(np.ceil(padding))
     return c
+
+
+def subsample_maps(net):
+    """
+    Randomly samples presynaptic feature maps that contribute to each connection.
+    We try to make sets of maps of a given layer that contribute to different
+    interarea connections mostly disjoint, although this doesn't have to be done
+    strictly, and in any case it's not always possible as the total across connections
+    may be greater than the number of maps. We do the same for interlaminar connections.
+
+    :param net: a Network
+    :return: indices of presynaptic feature maps to use in each connection
+    """
+
+    # start with uniform probability that each map is selected for inclusion in a connection;
+    # reduce probability of selecting a given map again whenever it is selected
+    probability_reduction = .01
+    interarea_probabilities = []
+    interlaminar_probabilities = []
+    for layer in net.layers:
+        interarea_probabilities.append(np.ones(layer.m))
+        interlaminar_probabilities.append(np.ones(layer.m))
+
+    subsample_indices = []
+    for connection in net.connections:
+        n_maps = int(round(connection.pre.m * connection.c))
+        pre_index = net.find_layer_index(connection.pre.name)
+
+        pre_cortical_area = connection.pre.name.split('_')[0]
+        post_cortical_area = connection.post.name.split('_')[0]
+        if pre_cortical_area == post_cortical_area: # interlaminar
+            p = interlaminar_probabilities[pre_index]
+        else:
+            p = interarea_probabilities[pre_index]
+
+        indices = np.random.choice(range(int(connection.pre.m)), n_maps, replace=False, p=p/np.sum(p))
+        for i in indices:
+            p[i] = p[i]*probability_reduction
+        subsample_indices.append(indices)
+
+    return subsample_indices
+
+
+def prune_maps(net, subsample_indices, output_name):
+    """
+    In case not all the feature maps are used in feedforward connections, the unused ones
+    can optionally be omitted from a model, if the model is not to include feedback
+    or lateral connections.
+
+    :param net:
+    :param subsample_indices: result of subsample_maps; indices of maps that provide input to each connection
+    :param output_name: name of layer used to feed output (not pruned)
+    :return:
+    """
+
+    # find which feature maps are used in output
+    indices_by_layer = []
+    for layer in net.layers:
+        connections = net.find_outbounds(layer.name)
+
+        all_indices_for_layer = []
+        for connection in connections:
+            conn_ind = net.find_connection_index(connection.pre.name, connection.post.name)
+            all_indices_for_layer.extend(subsample_indices[conn_ind])
+
+        all_indices_for_layer = list(set(all_indices_for_layer))
+        all_indices_for_layer.sort()
+        indices_by_layer.append(all_indices_for_layer)
+
+    new_subsample_indices = copy.deepcopy(subsample_indices)
+
+    # discard unused maps and condense indices
+    for i in range(len(net.layers)):
+        layer = net.layers[i]
+
+        if not layer.name == output_name and not layer.name == 'INPUT':
+            connections = net.find_outbounds(layer.name)
+
+            for connection in connections:
+                ind = net.find_connection_index(connection.pre.name, connection.post.name)
+                for j in range(len(new_subsample_indices[ind])):
+                    new_subsample_indices[ind][j] = indices_by_layer[i].index(subsample_indices[ind][j])
+
+            old_m = layer.m
+            layer.m = len(indices_by_layer[i])
+
+    return new_subsample_indices
+
+
+def prune_connections(net, subsample_indices):
+    """
+    Remove connections with no subsample indices.
+
+    :param net:
+    :param subsample_indices:
+    :return:
+    """
+    new_connections = []
+    new_subsample_indices = []
+    for i in range(len(subsample_indices)):
+        if len(subsample_indices[i]) > 0:
+            new_connections.append(net.connections[i])
+            new_subsample_indices.append(subsample_indices[i])
+
+    net.connections = new_connections
+    return new_subsample_indices
+
+
+def prune_layers(net, subsample_indices):
+    """
+    Remove layers with no maps and their associated connections. It is possible
+    for a layers to lose all its maps in prune_maps().
+
+    :param net: a Network
+    :return: updated Network with empty layers and associated connections removed
+    """
+    new_layers = []
+
+    discarded_names = []
+    for layer in net.layers:
+        if layer.m > 0:
+            new_layers.append(layer)
+        else:
+            discarded_names.append(layer.name)
+
+    new_connections = []
+    new_subsample_indices = []
+    for i in range(len(net.connections)):
+        connection = net.connections[i]
+        if connection.pre.name not in discarded_names and connection.post.name not in discarded_names:
+            new_connections.append(connection)
+            new_subsample_indices.append(subsample_indices[i])
+
+    net.layers = new_layers
+    net.connections = new_connections
+
+    return new_subsample_indices
 
 
 def preprocess(net, c_scale, sigma_scale, output):
@@ -270,9 +390,6 @@ def preprocess(net, c_scale, sigma_scale, output):
     for i in range(len(net.connections)):
         subsample_map[net.connections[i].get_name()] = subsample_indices[i]
 
-    # for i in range(len(subsample_indices)):
-    #     print('{}->{}: {}'.format(net.connections[i].pre.name, net.connections[i].post.name, len(subsample_indices[i])))
-
     removed_indices = net.prune_dead_ends([output])
     removed_indices = np.sort(removed_indices)
     for i in range(len(removed_indices)):
@@ -282,9 +399,6 @@ def preprocess(net, c_scale, sigma_scale, output):
     subsample_indices = []
     for i in range(len(net.connections)):
         subsample_indices.append(subsample_map[net.connections[i].get_name()])
-
-    # for i in range(len(subsample_indices)):
-    #     print('{}->{}: {}'.format(net.connections[i].pre.name, net.connections[i].post.name, len(subsample_indices[i])))
 
     for layer in net.layers:
         if layer.m < 1:
@@ -300,113 +414,35 @@ def preprocess(net, c_scale, sigma_scale, output):
             print('setting w to 1 for {}->{}'.format(connection.pre.name, connection.post.name))
             connection.w = 1
 
-    # input_layer = net.find_layer('INPUT')
-    # # input_channels = int(input_layer.m)
-    # input_channels = input_layer.m
-
     return subsample_indices
 
 
-def get_activities(checkpoint_file, stimulus_directory, opt_file='optimization-result-PITv.pkl', result_file=None):
+def load_model(opt_file='network_structure.pkl', checkpoint_file='trained_params.tar'):
     with open(opt_file, 'rb') as file:
         data = pickle.load(file)
     net = data['net']
-    backbone = Backbone(net, 'PITv_2/3', c_scale=.5, sigma_scale=.5)
-    net = Classifier(backbone)
+    layer_names = data['layer_names']
+
+    # subsample_indices = preprocess(net, .5, .5, 'PITv_2/3')
+    # graph = net.make_graph()
+    # layer_names = [name for name in nx.topological_sort(graph)]
+    #
+    # with open(opt_file, 'rb') as file:
+    #     data = pickle.load(file)
+    # data['layer_names'] = layer_names
+    # with open(opt_file, 'wb') as file:
+    #     pickle.dump(data, file)
+    # assert False
+
+    backbone = Backbone(net, layer_names, 'PITv_2/3', c_scale=.5, sigma_scale=.5)
+    net = Cifar10Classifier(backbone)
     net.snip(batches=1)
 
-    # CIFAR-10
-    # checkpoint = torch.load(checkpoint_file, map_location='cpu')
-    # net.load_state_dict(checkpoint['net'])
-
-    # ImageNet
     net = ImageNetClassifier(backbone)
     checkpoint = torch.load(checkpoint_file, map_location='cpu')
-    # print(checkpoint['net'])
     net.load_state_dict(checkpoint['state_dict'])
-    # net.load_state_dict(checkpoint['net'])
+    return net
 
-    stim_dataset = torchvision.datasets.ImageFolder(
-        root=stimulus_directory,
-        transform=torchvision.transforms.ToTensor()
-    )
-    # print(stim_dataset.imgs) # alphabetical by folder file name
-
-    stim_loader = torch.utils.data.DataLoader(
-        stim_dataset,
-        batch_size=1,
-        num_workers=0,
-        shuffle=False
-    )
-
-    activities = []
-    categories = []
-    for batch_idx, (inputs, targets) in enumerate(stim_loader):
-        print('Processing stimulus {} of {}'.format(batch_idx, len(stim_loader)))
-        activities.append(backbone(inputs).detach().numpy())
-        categories.append(targets.numpy()[0]) # note batch size 1
-
-    if result_file is not None:
-        with open(result_file, 'wb') as f:
-            pickle.dump((activities, categories), f)
-
-    return activities, categories
 
 if __name__ == '__main__':
-    # with open('optimization-result-PITv.pkl', 'rb') as file:
-    #     data = pickle.load(file)
-    # net = data['net']
-
-    # for connection in net.connections:
-    #     foo = int(round(connection.w))
-    #     if foo % 2 == 0:
-    #         foo += 1
-    #     print('{:.4}->{}'.format(connection.w, foo))
-
-    # c_scale = .75
-    # sigma_scale = .75
-    # subsample_indices = preprocess(net, c_scale, sigma_scale, 'PITv_2/3')
-
-    # backbone = Backbone(net, 'PITv_2/3')
-    # classifier = Classifier(backbone)
-    # classifier.snip()
-    # torch.save(classifier, 'classifier.pkl')
-    # foo = classifier.forward(torch.Tensor(np.random.randn(8, 3, 32, 32)))
-    # print(foo.shape)
-
-    # backbone.forward(torch.Tensor(np.random.randn(8, 3, 32, 32)))
-
-    # net = torch.load('/floyd/input/saved_models/classifier.pkl')
-
-    if False:
-        with open('optimization-result-PITv.pkl', 'rb') as file:
-                data = pickle.load(file)
-        net = data['net']
-        backbone = Backbone(net, 'PITv_2/3', c_scale=.5, sigma_scale=.5)
-    else:
-        with open('optimization-result-AITv.pkl', 'rb') as file:
-                data = pickle.load(file)
-        net = data['net']
-        backbone = Backbone(net, 'AITv_2/3', c_scale=.75, sigma_scale=.75)
-
-    net = Classifier(backbone)
-    net.snip(batches=1)
-
-    checkpoint = torch.load('./checkpoint/ckpt.pth', map_location='cpu')
-    net.load_state_dict(checkpoint['net'])
-    best_acc = checkpoint['acc']
-    start_epoch = checkpoint['epoch']
-
-    backbone.print()
-
-    # from cifar import get_testloader, test
-    # testloader = get_testloader()
-    # criterion = nn.CrossEntropyLoss()
-    # acc = test(net, testloader, criterion)
-
-    # activities, categories = get_activities(
-    #     './checkpoint/ckpt.pth',
-    #     '../it-cnn/tuning/images/clutter',
-    #     result_file='results/clutter-result.pkl')
-    # print(activities)
-    # print(categories)
+    net = load_model()
