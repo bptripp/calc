@@ -27,8 +27,6 @@ class Backbone(nn.Module):
         subsample_indices = preprocess(network, c_scale, sigma_scale, output)
 
         self.layer_names = layer_names
-        # graph = network.make_graph()
-        # self.layer_names = [name for name in nx.topological_sort(graph)]
         self._output_index = self.layer_names.index(output)
 
         self.bns = nn.ModuleList()
@@ -422,17 +420,6 @@ def load_model(opt_file='network_structure.pkl', checkpoint_file='trained_params
         data = pickle.load(file)
     net = data['net']
     layer_names = data['layer_names']
-
-    # subsample_indices = preprocess(net, .5, .5, 'PITv_2/3')
-    # graph = net.make_graph()
-    # layer_names = [name for name in nx.topological_sort(graph)]
-    #
-    # with open(opt_file, 'rb') as file:
-    #     data = pickle.load(file)
-    # data['layer_names'] = layer_names
-    # with open(opt_file, 'wb') as file:
-    #     pickle.dump(data, file)
-    # assert False
 
     backbone = Backbone(net, layer_names, 'PITv_2/3', c_scale=.5, sigma_scale=.5)
     net = Cifar10Classifier(backbone)
