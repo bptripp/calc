@@ -2,12 +2,9 @@
 Builds a PyTorch model from a CALC Network.
 """
 
-# TODO: scaled Glorot
-
 import copy
 import pickle
 import numpy as np
-import networkx as nx
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -31,7 +28,6 @@ class Backbone(nn.Module):
 
         self.bns = nn.ModuleList()
         self.inbound_connection_inds = []
-        print(self.layer_names)
         for layer_name in self.layer_names:
             layer = network.find_layer(layer_name)
             self.bns.append(nn.BatchNorm2d(layer.m))
@@ -80,7 +76,7 @@ class Backbone(nn.Module):
 
         return activities[self._output_index]
 
-    def print(self):
+    def print_architecture(self):
         for i, layer_name in enumerate(self.layer_names):
             print('{} {} channels'.format(layer_name, len(self.bns[i].weight)))
 
@@ -113,8 +109,6 @@ class Cifar10Classifier(nn.Module):
 
         self.backbone = backbone
         backbone_channels = backbone.forward(torch.Tensor(np.random.randn(2, 3, 32, 32))).shape[1]
-        print(backbone.forward(torch.Tensor(np.random.randn(2, 3, 32, 32))).shape)
-        print('backbone channels: {}'.format(backbone_channels))
 
         self.conv1 = nn.Conv2d(backbone_channels, 64, 1)
         self.bn1 = nn.BatchNorm2d(64)
@@ -183,7 +177,6 @@ class ImageNetClassifier(nn.Module):
 
         self.backbone = backbone
         backbone_channels = backbone.forward(torch.Tensor(np.random.randn(2, 3, 32, 32))).shape[1]
-        print(backbone.forward(torch.Tensor(np.random.randn(2, 3, 32, 32))).shape)
         print('backbone channels: {}'.format(backbone_channels))
 
         self.conv1 = nn.Conv2d(backbone_channels, 64, 1)
@@ -427,9 +420,12 @@ def load_model(opt_file='network_structure.pkl', checkpoint_file='trained_params
 
     net = ImageNetClassifier(backbone)
     checkpoint = torch.load(checkpoint_file, map_location='cpu')
+    print('Trained on ImageNet for {} epochs, top-1 accuracy {}'.format(
+        checkpoint['epoch'], checkpoint['best_acc1']))
     net.load_state_dict(checkpoint['state_dict'])
     return net
 
 
 if __name__ == '__main__':
     net = load_model()
+    net.backbone.print_architecture()
