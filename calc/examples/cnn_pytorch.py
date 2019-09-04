@@ -423,6 +423,7 @@ def load_model(opt_file='network_structure.pkl', checkpoint_file='trained_params
     print('Trained on ImageNet for {} epochs, top-1 accuracy {}'.format(
         checkpoint['epoch'], checkpoint['best_acc1']))
     net.load_state_dict(checkpoint['state_dict'])
+    net.eval()
     return net
 
 
